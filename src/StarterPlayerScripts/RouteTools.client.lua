@@ -465,40 +465,13 @@ local fishTab, fishScroll = makeContentTab()
 table.insert(tabFrames, fishTab)
 
 local autoFishBtn = makeButton(fishScroll, "Auto Fish: OFF", Color3.fromRGB(120, 120, 120), 0)
-local fishDelayBtn = makeButton(fishScroll, "Fish Delay: 0.15s", Color3.fromRGB(120, 120, 120), 1)
-local sellFishBtn = makeButton(fishScroll, "Sell All Fish", Color3.fromRGB(200, 180, 60), 2)
-local scanRemotesBtn = makeButton(fishScroll, "Scan Fishing Remotes", Color3.fromRGB(100, 180, 100), 3)
+local fishStatusLabel = makeLabel(fishScroll, "Status: Idle", Color3.fromRGB(150, 255, 150), 1, 40)
+fishStatusLabel.TextSize = 10
+fishStatusLabel.TextWrapped = true
 
-fishDebugLabel = makeLabel(fishScroll, "Fishing: -", Color3.fromRGB(150, 255, 150), 4, 170)
-fishDebugLabel.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
-fishDebugLabel.TextSize = 9
-fishDebugLabel.TextWrapped = true
-fishDebugLabel.TextYAlignment = Enum.TextYAlignment.Top
-local stopAnimBtn = makeButton(fishScroll, "Stop Anim: ON", Color3.fromRGB(50, 160, 70), 2)
-local useSpyArgsBtn = makeButton(fishScroll, "Use Spy Args: ON", Color3.fromRGB(50, 160, 70), 3)
-local testInstantBtn = makeButton(fishScroll, "Test Full Sequence", Color3.fromRGB(200, 130, 30), 7)
-local scanFishBtn = makeButton(fishScroll, "Scan Fishing Remotes", Color3.fromRGB(100, 180, 100), 9)
-local resetCounterBtn = makeButton(fishScroll, "Reset Counter", Color3.fromRGB(120, 120, 120), 10)
-local fishModeBtn = makeButton(fishScroll, "Fish Mode: Safe", Color3.fromRGB(50, 120, 190), 12)
-local testCastBtn = makeButton(fishScroll, "Test Cast Args", Color3.fromRGB(200, 130, 30), 13)
-local autoTrigBtn = makeButton(fishScroll, "Auto Trigger: ON", Color3.fromRGB(50, 160, 70), 20)
-local testAutoTrigBtn = makeButton(fishScroll, "Test Auto Trigger", Color3.fromRGB(200, 130, 30), 21)
-local testSpamBtn = makeButton(fishScroll, "Test Spam 3s", Color3.fromRGB(190, 90, 40), 22)
-local postSpamBtn = makeButton(fishScroll, "Post-MiniGame Spam: ON", Color3.fromRGB(50, 160, 70), 23)
-local markerDelayBtn = makeButton(fishScroll, "Marker Delay: 0.5s", Color3.fromRGB(50, 120, 190), 24)
-local spamDurBtn = makeButton(fishScroll, "Spam Duration: 3s", Color3.fromRGB(50, 120, 190), 25)
-local spamTargetBtn = makeButton(fishScroll, "Spam Target: Auto", Color3.fromRGB(50, 120, 190), 26)
-local skipCutBtn = makeButton(fishScroll, "Skip Cutscene: ON", Color3.fromRGB(50, 160, 70), 27)
-local testSkipBtn = makeButton(fishScroll, "Test Skip Cutscene", Color3.fromRGB(200, 130, 30), 28)
-fishDebugLabel.Size = UDim2.new(1, -8, 0, 460)   -- timeline butuh baris lebih banyak
-local stepBtns = {
-    makeButton(fishScroll, "Test Step 1: Cast(true)", Color3.fromRGB(190, 90, 40), 14),
-    makeButton(fishScroll, "Test Step 2: Cast(false, args)", Color3.fromRGB(190, 90, 40), 15),
-    makeButton(fishScroll, "Test Step 3: MiniGame", Color3.fromRGB(190, 90, 40), 16),
-}
-sellFishBtn.LayoutOrder = 8
-scanRemotesBtn.Visible = false   -- diganti Scan Fishing Remotes (baru, verify remote)
-fishDebugLabel.LayoutOrder = 11
+-- label debug tetap dibuat (Fish.render / log tetap jalan di belakang layar) tapi TIDAK ditampilkan di UI
+fishDebugLabel = Instance.new("TextLabel")
+fishDebugLabel.Name = "FishDebugHidden"
 
 -- ====== TAB 4: TOOLS ======
 local toolsTab, toolsScroll = makeContentTab()
@@ -526,406 +499,25 @@ local tpDelayBtn = makeButton(settingsScroll, "TP Delay: 0.5s", Color3.fromRGB(1
 local walkRadiusBtn = makeButton(settingsScroll, "Walk Radius: 6", Color3.fromRGB(120, 120, 120), 2)
 local walkSpeedBtn = makeButton(settingsScroll, "Walk Move: 0.08s", Color3.fromRGB(120, 120, 120), 3)
 
--- ====== TAB 6: COSMETICS (remote spy + observasi network) ======
+-- ====== REMOTE SPY UI (di bawah Settings) ======
 -- Remote spy: WAJIB dipakai dulu (Start -> mancing manual 1x -> Stop)
-local Cos = {}
-local cosTab, cosScroll = makeContentTab()
-table.insert(tabFrames, cosTab)
+local SpyUI = {}
+SpyUI.start = makeButton(settingsScroll, "Start Spy", Color3.fromRGB(50, 160, 70), 20)
+SpyUI.stop = makeButton(settingsScroll, "Stop Spy", Color3.fromRGB(200, 50, 50), 21)
+SpyUI.clear = makeButton(settingsScroll, "Clear Spy Log", Color3.fromRGB(120, 120, 120), 22)
+SpyUI.log = makeLabel(settingsScroll, "[spy] log kosong", Color3.fromRGB(150, 255, 150), 23, 300)
+SpyUI.log.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
+SpyUI.log.TextSize = 9
+SpyUI.log.TextWrapped = true
+SpyUI.log.TextXAlignment = Enum.TextXAlignment.Left
+SpyUI.log.TextYAlignment = Enum.TextYAlignment.Top
 
-Cos.start = makeButton(cosScroll, "Start Spy", Color3.fromRGB(50, 160, 70), 0)
-Cos.stop = makeButton(cosScroll, "Stop Spy", Color3.fromRGB(200, 50, 50), 1)
-Cos.replay = makeButton(cosScroll, "Replay Last", Color3.fromRGB(200, 130, 30), 2)
-Cos.skinList = makeButton(cosScroll, "Get Skin List", Color3.fromRGB(90, 190, 230), 3)
-Cos.clear = makeButton(cosScroll, "Clear Log", Color3.fromRGB(120, 120, 120), 4)
-Cos.log = makeLabel(cosScroll, "[spy] log kosong", Color3.fromRGB(150, 255, 150), 5, 300)
-Cos.log.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
-Cos.log.TextSize = 9
-Cos.log.TextWrapped = true
-Cos.log.TextXAlignment = Enum.TextXAlignment.Left
-Cos.log.TextYAlignment = Enum.TextYAlignment.Top
-
-function Cos.setText(text)
-    if Cos.log and Cos.log.Parent then
-        pcall(function() Cos.log.Text = text end)
+function SpyUI.setText(text)
+    if SpyUI.log and SpyUI.log.Parent then
+        pcall(function() SpyUI.log.Text = text end)
     end
 end
 
--- tombol tab Fishing (dibuat di sini karena tabel Cos baru ada di titik ini; slot local hemat)
-Cos.sellRemote = makeButton(fishScroll, "Remote Sell Fish (No NPC)", Color3.fromRGB(200, 180, 60), 29)
-
--- cari remote jual (urut prioritas); hasil di-cache, scan ReplicatedStorage hanya sampai ketemu
-function Cos.findSellRemote()
-    if Cos.sellRemoteObj and Cos.sellRemoteObj.Parent then return Cos.sellRemoteObj end
-    -- JualSemua = hasil spy (RemoteFunction tanpa argumen); sisanya fallback
-    local names = { "JualSemua", "SellFish", "SellAllFish", "SellAll", "JualIkan", "Jual" }
-    pcall(function()
-        local byName = {}
-        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-            if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and not byName[obj.Name] then
-                byName[obj.Name] = obj
-            end
-        end
-        -- AmbilSemua (refresh inventory setelah jual), di-cache terpisah
-        if byName.AmbilSemua then Cos.ambilSemuaRemote = byName.AmbilSemua end
-        for _, n in ipairs(names) do
-            if byName[n] then
-                Cos.sellRemoteObj = byName[n]
-                return
-            end
-        end
-    end)
-    return Cos.sellRemoteObj
-end
-
-Cos.autoYes = true
-Cos.autoYesBtn = makeButton(fishScroll, "Auto Confirm Yes: ON", Color3.fromRGB(50, 160, 70), 34)
-
--- tombol konfirmasi yang sedang tampil (Yes / Ya / Konfirmasi / OK), bukan milik GUI kita
-function Cos.findYesButton()
-    local found
-    pcall(function()
-        for _, obj in ipairs(playerGui:GetDescendants()) do
-            if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible then
-                local sg = obj:FindFirstAncestorOfClass("ScreenGui")
-                if sg and sg.Enabled and sg.Name ~= "RoutePanel" and sg.Name ~= "RouteIcon" and sg.Name ~= "RouteError" then
-                    local txt = obj:IsA("TextButton") and obj.Text or ""
-                    if txt == "" then
-                        local lbl = obj:FindFirstChildWhichIsA("TextLabel", true)
-                        txt = lbl and lbl.Text or ""
-                    end
-                    txt = string.lower((txt:gsub("^%s+", ""):gsub("%s+$", "")))
-                    if txt == "yes" or txt == "ya" or txt == "konfirmasi" or txt == "ok" then
-                        found = obj
-                        return
-                    end
-                end
-            end
-        end
-    end)
-    return found
-end
-
--- klik dengan 3 metode, semua pcall; true kalau minimal satu tidak error
-function Cos.autoClickButton(button)
-    if not button or not button.Parent then return false end
-    local any = false
-    if pcall(function() button.MouseButton1Click:Fire() end) then any = true end
-    if pcall(function() button:Activate() end) then any = true end
-    if pcall(function()
-        local vu = game:GetService("VirtualUser")
-        local pos = button.AbsolutePosition + button.AbsoluteSize / 2
-        vu:ClickButton1(pos)
-    end) then any = true end
-    return any
-end
-
--- satu alur per klik; hasil per step ke log Cosmetics, status singkat di teks tombol
-function Cos.remoteSell()
-    if Cos.sellBusy then return end
-    Cos.sellBusy = true
-    local btn = Cos.sellRemote
-    local normal = "Remote Sell Fish (No NPC)"
-    local function setBtn(t) if btn and btn.Parent then btn.Text = t end end
-    if USE_AUTO_FISH then
-        Cos.setText("[Sell] Matikan Auto Fish dulu")
-        Cos.sellBusy = false
-        return
-    end
-    local remote = Cos.findSellRemote()
-    if not remote then
-        Cos.setText("[Sell] Remote JualSemua tidak ditemukan.")
-        setBtn("Not Found")
-        task.wait(1.5)
-        setBtn(normal)
-        Cos.sellBusy = false
-        return
-    end
-    setBtn("Selling...")
-    local lines = {}
-    local function step(msg)
-        table.insert(lines, "[Sell] " .. msg)
-        Cos.setText(table.concat(lines, "\n"))
-    end
-    local function invoke(r, ...)
-        local args = table.pack(...)
-        return pcall(function()
-            if r:IsA("RemoteFunction") then
-                return r:InvokeServer(table.unpack(args, 1, args.n))
-            end
-            r:FireServer(table.unpack(args, 1, args.n))
-        end)
-    end
-
-    step("Step 1 OK (remote " .. remote.Name .. ")")
-
-    -- Step 2: InfoJual("semua") memunculkan prompt konfirmasi (opsional kalau remote tidak ada)
-    local info = Cos.findNamed("InfoJual")
-    if info then
-        local okI, errI = invoke(info, "semua")
-        step(okI and "Step 2 OK (InfoJual)" or ("Step 2 Error: " .. tostring(errI)))
-    else
-        step("Step 2 skip (InfoJual tidak ditemukan)")
-    end
-    task.wait(0.3)
-
-    -- Step 3-4: cari & klik tombol Yes (retry tiap 0.1s, maks 3s)
-    if Cos.autoYes and info then
-        local yes
-        local t0 = tick()
-        while tick() - t0 < 3 do
-            yes = Cos.findYesButton()
-            if yes then break end
-            task.wait(0.1)
-        end
-        if yes then
-            local clicked = Cos.autoClickButton(yes)
-            step(clicked and ("Step 3 OK Auto-clicked Yes (" .. yes:GetFullName() .. ")") or "Step 3 click gagal")
-        else
-            step("Step 3 Prompt Yes not found, manual required")
-            setBtn("Klik Yes manual!")
-        end
-        task.wait(0.3)
-    else
-        step("Step 3 skip (Auto Confirm OFF / tanpa prompt)")
-    end
-
-    -- Step 5: JualSemua (cadangan kalau prompt tidak muncul)
-    local ok, err = invoke(remote)
-    step(ok and ("Step 4 OK Success via " .. remote.Name) or ("Step 4 Error: " .. tostring(err)))
-
-    if ok then
-        -- Step 6: sinkronisasi inventory seperti alur game
-        task.wait(0.2)
-        local ambil = Cos.ambilSemuaRemote
-        if ambil and ambil.Parent and ambil:IsA("RemoteFunction") then
-            local okA, errA = invoke(ambil)
-            step(okA and "Step 5 OK (AmbilSemua)" or ("Step 5 Error: " .. tostring(errA)))
-        else
-            step("Step 5 skip (AmbilSemua tidak ada)")
-        end
-    end
-    task.wait(0.5)
-    setBtn(ok and "Sold!" or "Error")
-    task.wait(1.5)
-    setBtn(normal)
-    Cos.sellBusy = false
-end
-
--- ====== FAVORITE BY FILTER (mutasi / rarity) ======
--- UI di tab Fishing (dibuat di sini, lihat catatan tombol Remote Sell); log ke label Cosmetics
-function Cos.makeBox(parent, placeholder, order)
-    local tb = Instance.new("TextBox")
-    tb.LayoutOrder = order
-    tb.Size = UDim2.new(1, -8, 0, 30)
-    tb.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    tb.TextColor3 = Color3.new(1, 1, 1)
-    tb.PlaceholderText = placeholder
-    tb.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
-    tb.Text = ""
-    tb.ClearTextOnFocus = false
-    tb.Font = Enum.Font.Code
-    tb.TextSize = 11
-    tb.Parent = parent
-    Instance.new("UICorner", tb)
-    return tb
-end
-Cos.debugInv = makeButton(fishScroll, "Debug AmbilSemua", Color3.fromRGB(90, 190, 230), 30)
-Cos.mutBox = Cos.makeBox(fishScroll, "Sandy, Ghost, Holographic", 31)
-Cos.rarBox = Cos.makeBox(fishScroll, "Secret, Mythic, Forgotten", 32)
-Cos.favBtn = makeButton(fishScroll, "Favorite by Filter", Color3.fromRGB(200, 180, 60), 33)
-
--- cari remote by nama (cache per nama)
-Cos.remoteCache = {}
-function Cos.findNamed(name)
-    local c = Cos.remoteCache[name]
-    if c and c.Parent then return c end
-    pcall(function()
-        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-            if obj.Name == name and (obj:IsA("RemoteFunction") or obj:IsA("RemoteEvent")) then
-                Cos.remoteCache[name] = obj
-                return
-            end
-        end
-    end)
-    return Cos.remoteCache[name]
-end
-
--- invoke AmbilSemua sekali -> ok, data
-function Cos.fetchInventory()
-    local r = Cos.findNamed("AmbilSemua")
-    if not r then return false, "Remote AmbilSemua not found" end
-    if not r:IsA("RemoteFunction") then return false, "AmbilSemua bukan RemoteFunction" end
-    return pcall(function() return r:InvokeServer() end)
-end
-
--- n item pertama dari array/dict
-function Cos.firstItems(data, n)
-    local out, cnt = {}, 0
-    for k, v in pairs(data) do
-        cnt = cnt + 1
-        if cnt <= n then out[k] = v end
-    end
-    return out, cnt
-end
-
-function Cos.debugInventory()
-    if Cos.invBusy then return end
-    Cos.invBusy = true
-    local ok, data = Cos.fetchInventory()
-    if not ok then
-        Cos.setText("[Inv] Error: " .. tostring(data))
-    elseif typeof(data) ~= "table" then
-        Cos.setText("[Inv] Return bukan table: " .. tostring(data) .. " (" .. typeof(data) .. ")")
-    else
-        local first, total = Cos.firstItems(data, 3)
-        Cos.setText("[Inv] " .. total .. " entri, 3 pertama:\n" .. Cos.tableToString(first))
-    end
-    task.wait(0.5)
-    Cos.invBusy = false
-end
-
--- "Sandy, Ghost" -> { "sandy", "ghost" }
-function Cos.parseFilter(text)
-    local out = {}
-    for part in string.gmatch(tostring(text or ""), "[^,]+") do
-        local t = string.lower((part:gsub("^%s+", ""):gsub("%s+$", "")))
-        if t ~= "" then table.insert(out, t) end
-    end
-    return out
-end
-
--- ambil field pertama yang ada dari daftar nama kandidat (nil kalau tidak ada key sama sekali)
-function Cos.pickField(item, names)
-    for _, n in ipairs(names) do
-        if item[n] ~= nil then return true, item[n] end
-    end
-    return false, nil
-end
-
-function Cos.matchAny(value, filters)
-    local v = string.lower(tostring(value or ""))
-    for _, f in ipairs(filters) do
-        if string.find(v, f, 1, true) then return true end
-    end
-    return false
-end
-
-Cos.UUID_KEYS = { "uuid", "UUID", "Uuid", "id", "Id", "ID" }
-Cos.MUT_KEYS = { "mutation", "Mutation", "mutasi", "Mutasi", "variant", "Variant" }
-Cos.RAR_KEYS = { "rarity", "Rarity", "rarita", "kelangkaan", "Kelangkaan", "tier", "Tier" }
-
--- favorit ikan yang cocok filter; jika mutasi & rarity keduanya diisi, keduanya harus cocok (AND)
-function Cos.favoriteByFilter()
-    if Cos.favBusy then return end
-    Cos.favBusy = true
-    local function done(msg)
-        Cos.setText(msg)
-        Cos.favBusy = false
-    end
-    local mutF = Cos.parseFilter(Cos.mutBox and Cos.mutBox.Text)
-    local rarF = Cos.parseFilter(Cos.rarBox and Cos.rarBox.Text)
-    if #mutF == 0 and #rarF == 0 then return done("[Fav] Isi filter mutasi atau rarity dulu") end
-    local fav = Cos.findNamed("TandaiFavorit")
-    if not fav then return done("[Fav] Remote TandaiFavorit not found") end
-    local ok, data = Cos.fetchInventory()
-    if not ok then return done("[Fav] Error: " .. tostring(data)) end
-    if typeof(data) ~= "table" or next(data) == nil then return done("[Fav] Inventory kosong / nil") end
-
-    -- kumpulkan item bertabel; kalau dict berkunci UUID, key dipakai sebagai UUID cadangan
-    local items = {}
-    for k, v in pairs(data) do
-        if typeof(v) == "table" then table.insert(items, { key = k, item = v }) end
-    end
-    if #items == 0 then return done("[Fav] Struktur data tidak dikenali, jalankan Debug AmbilSemua dulu") end
-
-    -- validasi struktur dari 5 item pertama: field yang difilter harus ada
-    local seenMut, seenRar = false, false
-    for i = 1, math.min(5, #items) do
-        if Cos.pickField(items[i].item, Cos.MUT_KEYS) then seenMut = true end
-        if Cos.pickField(items[i].item, Cos.RAR_KEYS) then seenRar = true end
-    end
-    if (#mutF > 0 and not seenMut) or (#rarF > 0 and not seenRar) then
-        return done("[Fav] Struktur data tidak dikenali, jalankan Debug AmbilSemua dulu")
-    end
-
-    local count, scanned = 0, 0
-    for _, e in ipairs(items) do
-        scanned = scanned + 1
-        local item = e.item
-        local _, uuid = Cos.pickField(item, Cos.UUID_KEYS)
-        if uuid == nil and typeof(item[1]) == "string" then uuid = item[1] end
-        if uuid == nil and typeof(e.key) == "string" then uuid = e.key end
-        if uuid ~= nil then
-            local match = true
-            if #mutF > 0 then
-                local _, m = Cos.pickField(item, Cos.MUT_KEYS)
-                match = match and Cos.matchAny(m, mutF)
-            end
-            if match and #rarF > 0 then
-                local _, r = Cos.pickField(item, Cos.RAR_KEYS)
-                match = match and Cos.matchAny(r, rarF)
-            end
-            if match then
-                local sent = pcall(function() fav:FireServer(uuid, true) end)
-                if sent then count = count + 1 end
-                task.wait(0.1)
-            end
-        end
-    end
-    done("[Fav] " .. count .. " ikan di-favorite (dari " .. scanned .. " entri)")
-end
-
--- tabel -> teks (kedalaman dan jumlah item dibatasi supaya label tidak meledak)
-function Cos.tableToString(v, depth)
-    depth = depth or 0
-    if typeof(v) ~= "table" then return tostring(v) end
-    if depth >= 3 then return "{...}" end
-    local parts, n = {}, 0
-    for k, x in pairs(v) do
-        n = n + 1
-        if n > 60 then
-            table.insert(parts, "...")
-            break
-        end
-        table.insert(parts, string.rep("  ", depth + 1) .. tostring(k) .. " = " .. Cos.tableToString(x, depth + 1))
-    end
-    return "{\n" .. table.concat(parts, "\n") .. "\n" .. string.rep("  ", depth) .. "}"
-end
-
--- cari remote DaftarSkin (cache; scan ReplicatedStorage hanya sekali sampai ketemu)
-function Cos.findSkinList()
-    if Cos.skinListRemote and Cos.skinListRemote.Parent then return Cos.skinListRemote end
-    pcall(function()
-        for _, obj in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-            if obj.Name == "DaftarSkin" and (obj:IsA("RemoteFunction") or obj:IsA("RemoteEvent")) then
-                Cos.skinListRemote = obj
-                break
-            end
-        end
-    end)
-    return Cos.skinListRemote
-end
-
--- satu InvokeServer per klik, tanpa argumen, hasil ditampilkan di log
-function Cos.getSkinList()
-    if Cos.busy then return end
-    Cos.busy = true
-    local remote = Cos.findSkinList()
-    if not remote then
-        Cos.setText("[SkinList] Remote DaftarSkin not found")
-    elseif not remote:IsA("RemoteFunction") then
-        Cos.setText("[SkinList] DaftarSkin bukan RemoteFunction (" .. remote.ClassName .. ")")
-    else
-        local ok, res = pcall(function() return remote:InvokeServer() end)
-        if ok then
-            Cos.setText("[SkinList]\n" .. Cos.tableToString(res))
-        else
-            Cos.setText("[SkinList] Error: " .. tostring(res))
-        end
-    end
-    task.wait(0.5)
-    Cos.busy = false
-end
 
 -- ====== TAB BUTTONS (SIDEBAR) ======
 local tabDefs = {
@@ -934,7 +526,6 @@ local tabDefs = {
     { emoji = "F", name = "Fishing" },
     { emoji = "T", name = "Tools" },
     { emoji = "S", name = "Settings" },
-    { emoji = "C", name = "Cosmetics" },
 }
 
 for i, def in ipairs(tabDefs) do
@@ -1271,37 +862,6 @@ local function setFishText(text)
     if fishDebugLabel and fishDebugLabel.Parent then
         pcall(function() fishDebugLabel.Text = text end)
     end
-end
-
-local function sellAllFish()
-    local found = nil
-    pcall(function()
-        for _, wanted in ipairs({ "SellFish", "SellAllItems" }) do
-            for _, d in ipairs(ReplicatedStorage:GetDescendants()) do
-                if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and d.Name == wanted then
-                    found = d
-                    return
-                end
-            end
-        end
-    end)
-    if not found then
-        setFishText("Sell: remote SellFish tidak ketemu")
-        return false
-    end
-    local ok, err = pcall(function()
-        if found:IsA("RemoteFunction") then
-            found:InvokeServer()
-        else
-            found:FireServer()
-        end
-    end)
-    if ok then
-        setFishText("Sell: " .. found.ClassName .. " " .. found.Name .. " fired")
-    else
-        setFishText("Sell error: " .. tostring(err))
-    end
-    return ok
 end
 
 local function scanFishingRemotes()
@@ -2700,7 +2260,7 @@ do
         local from = math.max(1, #spyLog - 11)
         for i = from, #spyLog do table.insert(lines, spyLog[i]) end
         if #lines == 0 then lines = { "[spy] log kosong" } end
-        Cos.setText(table.concat(lines, "\n"))
+        SpyUI.setText(table.concat(lines, "\n"))
     end
 
     local function logSpy(msg)
@@ -2769,8 +2329,6 @@ do
             end
         end
         logSpy(tag .. string.format("+%.2fs ", dt) .. "[" .. method .. "] " .. remote.Name .. "(" .. argStr .. ")")
-        -- simpan panggilan terakhir (argumen asli) untuk Replay Last
-        Spy.last = { method = method, remote = remote, args = table.pack(...) }
         local key = method .. " " .. remote.Name
         local c = spyCounts[key]
         if not c then
@@ -2937,43 +2495,19 @@ do
         end
         for _, l in ipairs(lines) do table.insert(spyLog, l) end
         while #spyLog > 50 do table.remove(spyLog, 1) end
-        Cos.setText(table.concat(lines, "\n"))
+        SpyUI.setText(table.concat(lines, "\n"))
     end
 
     local function clearSpyLog()
         spyLog = {}
         spyCounts = {}
-        Cos.setText("[spy] log dibersihkan")
-    end
-
-    -- ulang panggilan terakhir yang tertangkap, argumen asli, semua lewat pcall; jeda 0.5s, tidak bisa ditumpuk
-    local function replayLast()
-        if Spy.replaying then return end
-        local last = Spy.last
-        if not last or not last.remote or not last.remote.Parent then
-            logSpy("[replay] belum ada panggilan tertangkap")
-            pcall(spyRender)
-            return
-        end
-        Spy.replaying = true
-        local ok, err = pcall(function()
-            if last.method == "InvokeServer" then
-                last.remote:InvokeServer(table.unpack(last.args, 1, last.args.n))
-            else
-                last.remote:FireServer(table.unpack(last.args, 1, last.args.n))
-            end
-        end)
-        logSpy("[replay] " .. last.method .. " " .. last.remote.Name .. (ok and " ok" or (" err: " .. tostring(err))))
-        pcall(spyRender)
-        task.wait(0.5)
-        Spy.replaying = false
+        SpyUI.setText("[spy] log dibersihkan")
     end
 
     Spy.pause = SPY_PAUSE_AUTOFISH
     Spy.start = startSpy
     Spy.stop = stopSpy
     Spy.clear = clearSpyLog
-    Spy.replay = replayLast
 end
 
 -- ====== BACKGROUND LOOPS ======
@@ -3493,14 +3027,6 @@ walkSpeedBtn.MouseButton1Click:Connect(safe(function()
     walkSpeedBtn.Text = "Walk Move: " .. WALK_MOVE_TIME .. "s"
 end))
 
-local fishDelayOptions = {0.05, 0.15, 0.3}
-local fishDelayIdx = 2
-fishDelayBtn.MouseButton1Click:Connect(safe(function()
-    fishDelayIdx = fishDelayIdx % #fishDelayOptions + 1
-    FISH_DELAY = fishDelayOptions[fishDelayIdx]
-    fishDelayBtn.Text = "Fish Delay: " .. FISH_DELAY .. "s"
-end))
-
 tpNextBtn.MouseButton1Click:Connect(safe(function()
     currentIndex = math.min(currentIndex + 1, #CP_LIST)
     teleport(CP_LIST[currentIndex])
@@ -3516,294 +3042,19 @@ end))
 -- Aktifkan tab pertama (Route) saat script pertama jalan
 setActiveTab(1)
 
--- ====== LOGIC TOMBOL: SELL + SCAN FISHING ======
-sellFishBtn.MouseButton1Click:Connect(safe(function()
-    sellFishBtn.Text = "Selling..."
-    task.spawn(function()
-        pcall(sellAllFish)
-        sellFishBtn.Text = "Sell All Fish"
-    end)
-end))
-
-scanRemotesBtn.MouseButton1Click:Connect(safe(function()
-    scanRemotesBtn.Text = "Scanning..."
-    task.spawn(function()
-        pcall(scanFishingRemotes)
-        scanRemotesBtn.Text = "Scan Fishing Remotes"
-    end)
-end))
-
 -- ====== LOGIC TOMBOL: REMOTE SPY ======
-Cos.start.MouseButton1Click:Connect(safe(function()
+SpyUI.start.MouseButton1Click:Connect(safe(function()
     local ok, err = pcall(Spy.start)
-    if not ok then Cos.setText("[spy] err: " .. tostring(err)) end
+    if not ok then SpyUI.setText("[spy] err: " .. tostring(err)) end
 end))
 
-Cos.stop.MouseButton1Click:Connect(safe(function()
+SpyUI.stop.MouseButton1Click:Connect(safe(function()
     local ok, err = pcall(Spy.stop)
-    if not ok then Cos.setText("[spy] err: " .. tostring(err)) end
+    if not ok then SpyUI.setText("[spy] err: " .. tostring(err)) end
 end))
 
-Cos.clear.MouseButton1Click:Connect(safe(function()
+SpyUI.clear.MouseButton1Click:Connect(safe(function()
     pcall(Spy.clear)
-end))
-
-Cos.debugInv.MouseButton1Click:Connect(safe(function()
-    task.spawn(function() pcall(Cos.debugInventory) end)
-end))
-
-Cos.favBtn.MouseButton1Click:Connect(safe(function()
-    task.spawn(function()
-        local ok, err = pcall(Cos.favoriteByFilter)
-        if not ok then
-            Cos.favBusy = false
-            Cos.setText("[Fav] Error: " .. tostring(err))
-        end
-    end)
-end))
-
-Cos.autoYesBtn.MouseButton1Click:Connect(safe(function()
-    Cos.autoYes = not Cos.autoYes
-    Cos.autoYesBtn.Text = "Auto Confirm Yes: " .. (Cos.autoYes and "ON" or "OFF")
-    Cos.autoYesBtn.BackgroundColor3 = Cos.autoYes and Color3.fromRGB(50, 160, 70) or Color3.fromRGB(120, 120, 120)
-end))
-
-Cos.sellRemote.MouseButton1Click:Connect(safe(function()
-    task.spawn(function() pcall(Cos.remoteSell) end)
-end))
-
-Cos.skinList.MouseButton1Click:Connect(safe(function()
-    task.spawn(function() pcall(Cos.getSkinList) end)
-end))
-
-Cos.replay.MouseButton1Click:Connect(safe(function()
-    task.spawn(function() pcall(Spy.replay) end)
-end))
-
--- ====== LOGIC TOMBOL: INSTANT FISHING ======
-fishModeBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    if Fish.mode == "Safe" then
-        Fish.mode = "Aggressive"
-        FISH_DELAY = 0.05
-        fishDelayBtn.Text = "Fish Delay: 0.05s"
-    elseif Fish.mode == "Aggressive" then
-        Fish.mode = "Random"
-    else
-        Fish.mode = "Safe"
-    end
-    fishModeBtn.Text = "Fish Mode: " .. Fish.mode
-    pcall(Fish.render)
-end))
-
-stopAnimBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    Fish.stopAnimOn = not Fish.stopAnimOn
-    if Fish.stopAnimOn then
-        stopAnimBtn.Text = "Stop Anim: ON"
-        stopAnimBtn.BackgroundColor3 = Color3.fromRGB(50, 160, 70)
-    else
-        stopAnimBtn.Text = "Stop Anim: OFF"
-        stopAnimBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-    end
-    pcall(Fish.render)
-end))
-
-scanFishBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    scanFishBtn.Text = "Scanning..."
-    task.spawn(function()
-        local ok, err = pcall(Fish.scan)
-        if not ok then pcall(Fish.log, "err: " .. tostring(err)) end
-        scanFishBtn.Text = "Scan Fishing Remotes"
-    end)
-end))
-
-testInstantBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    testInstantBtn.Text = "Fishing..."
-    task.spawn(function()
-        local ok, err = pcall(Fish.instant)
-        if not ok then pcall(Fish.log, "err: " .. tostring(err)) end
-        testInstantBtn.Text = "Test Full Sequence"
-    end)
-end))
-
-useSpyArgsBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    Fish.useSpyArgs = not Fish.useSpyArgs
-    if Fish.useSpyArgs then
-        useSpyArgsBtn.Text = "Use Spy Args: ON"
-        useSpyArgsBtn.BackgroundColor3 = Color3.fromRGB(50, 160, 70)
-    else
-        useSpyArgsBtn.Text = "Use Spy Args: OFF"
-        useSpyArgsBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-    end
-    pcall(Fish.render)
-end))
-
-testCastBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    testCastBtn.Text = "Testing..."
-    task.spawn(function()
-        local ok, err = pcall(Fish.testCastArgs)
-        if not ok then pcall(Fish.log, "err: " .. tostring(err)) end
-        testCastBtn.Text = "Test Cast Args"
-    end)
-end))
-
-resetCounterBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    pcall(Fish.resetCounter)
-end))
-
--- ====== LOGIC TOMBOL: TEST PER STEP ======
-for idx, b in ipairs(stepBtns) do
-    local label = b.Text
-    b.MouseButton1Click:Connect(safe(function()
-        Fish.live = true
-        b.Text = "Working..."
-        task.spawn(function()
-            local fn = idx == 1 and Fish.step1 or (idx == 2 and Fish.step2 or Fish.step3)
-            local ok, err = pcall(fn)
-            if not ok then pcall(Fish.log, "err: " .. tostring(err)) end
-            b.Text = label
-        end)
-    end))
-end
-
--- ====== LOGIC TOMBOL: AUTO TRIGGER ======
-autoTrigBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    Fish.autoTrigger = not Fish.autoTrigger
-    if Fish.autoTrigger then
-        autoTrigBtn.Text = "Auto Trigger: ON"
-        autoTrigBtn.BackgroundColor3 = Color3.fromRGB(50, 160, 70)
-    else
-        autoTrigBtn.Text = "Auto Trigger: OFF"
-        autoTrigBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-    end
-    pcall(Fish.render)
-end))
-
-testAutoTrigBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    testAutoTrigBtn.Text = "Testing..."
-    task.spawn(function()
-        local ok, err = pcall(Fish.testAutoTrigger)
-        if not ok then pcall(Fish.log, "err: " .. tostring(err)) end
-        testAutoTrigBtn.Text = "Test Auto Trigger"
-    end)
-end))
-
--- ====== LOGIC TOMBOL: POST-MINIGAME SPAM ======
-testSpamBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    testSpamBtn.Text = "Spamming 3s..."
-    task.spawn(function()
-        local ok, err = pcall(Fish.testSpam3)
-        if not ok then pcall(Fish.log, "err: " .. tostring(err)) end
-        testSpamBtn.Text = "Test Spam 3s"
-    end)
-end))
-
-postSpamBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    Fish.postSpam = not Fish.postSpam
-    if Fish.postSpam then
-        postSpamBtn.Text = "Post-MiniGame Spam: ON"
-        postSpamBtn.BackgroundColor3 = Color3.fromRGB(50, 160, 70)
-    else
-        postSpamBtn.Text = "Post-MiniGame Spam: OFF"
-        postSpamBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-    end
-    pcall(Fish.render)
-end))
-
--- ====== LOGIC TOMBOL: MARKER DELAY + SPAM DURATION ======
-do
-    local delayOpts = { 0.2, 0.5, 0.8, 1.0 }
-    markerDelayBtn.MouseButton1Click:Connect(safe(function()
-        Fish.live = true
-        local idx = 1
-        for i, v in ipairs(delayOpts) do
-            if v == Fish.markerDelay then idx = i end
-        end
-        Fish.markerDelay = delayOpts[idx % #delayOpts + 1]
-        markerDelayBtn.Text = "Marker Delay: " .. Fish.markerDelay .. "s"
-        pcall(Fish.render)
-    end))
-
-    local durOpts = { 2, 3, 5 }
-    spamDurBtn.MouseButton1Click:Connect(safe(function()
-        Fish.live = true
-        local idx = 1
-        for i, v in ipairs(durOpts) do
-            if v == Fish.spamDuration then idx = i end
-        end
-        Fish.spamDuration = durOpts[idx % #durOpts + 1]
-        spamDurBtn.Text = "Spam Duration: " .. Fish.spamDuration .. "s"
-        pcall(Fish.render)
-    end))
-
-    local targetOpts = { "Auto", "Quick", "Berhenti", "Screen" }
-    spamTargetBtn.MouseButton1Click:Connect(safe(function()
-        Fish.live = true
-        local idx = 1
-        for i, v in ipairs(targetOpts) do
-            if v == Fish.spamTarget then idx = i end
-        end
-        Fish.spamTarget = targetOpts[idx % #targetOpts + 1]
-        spamTargetBtn.Text = "Spam Target: " .. Fish.spamTarget
-        pcall(Fish.render)
-    end))
-end
-
--- ====== LOGIC TOMBOL: SKIP CUTSCENE ======
-skipCutBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    Fish.skipCutscene = not Fish.skipCutscene
-    if Fish.skipCutscene then
-        skipCutBtn.Text = "Skip Cutscene: ON"
-        skipCutBtn.BackgroundColor3 = Color3.fromRGB(50, 160, 70)
-    else
-        skipCutBtn.Text = "Skip Cutscene: OFF"
-        skipCutBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
-    end
-    pcall(Fish.render)
-end))
-
--- tombol agresif dibuat di sini (slot local top-level hampir penuh -> simpan di tabel Fish)
-Fish.aggBtn = makeButton(fishScroll, "Aggressive Cutscene Skip: ON", Color3.fromRGB(50, 160, 70), 29)
-Fish.beamBtn = makeButton(fishScroll, "Destroy Beam: ON", Color3.fromRGB(50, 160, 70), 30)
-
-function Fish.setToggle(btn, label, on)
-    btn.Text = label .. (on and ": ON" or ": OFF")
-    btn.BackgroundColor3 = on and Color3.fromRGB(50, 160, 70) or Color3.fromRGB(120, 120, 120)
-end
-
-Fish.aggBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    Fish.aggSkip = not Fish.aggSkip
-    Fish.setToggle(Fish.aggBtn, "Aggressive Cutscene Skip", Fish.aggSkip)
-    pcall(Fish.render)
-end))
-
-Fish.beamBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    Fish.destroyBeam = not Fish.destroyBeam
-    Fish.setToggle(Fish.beamBtn, "Destroy Beam", Fish.destroyBeam)
-    pcall(Fish.render)
-end))
-
-testSkipBtn.MouseButton1Click:Connect(safe(function()
-    Fish.live = true
-    testSkipBtn.Text = "Testing 5s..."
-    task.spawn(function()
-        local ok, err = pcall(Fish.testSkipCutscene)
-        if not ok then pcall(Fish.log, "err: " .. tostring(err)) end
-        testSkipBtn.Text = "Test Skip Cutscene"
-    end)
 end))
 
 -- Auto Fish hanya boleh ON kalau CastEvent sudah ada (defer = jalan setelah handler toggle lama)
@@ -3811,6 +3062,7 @@ autoFishBtn.MouseButton1Click:Connect(safe(function()
     task.defer(function()
         if USE_AUTO_FISH and not Fish.ready() then
             USE_AUTO_FISH = false
+            Fish.refuseT = tick()
             autoFishBtn.Text = "Auto Fish: OFF"
             autoFishBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
             Fish.live = true
@@ -3830,6 +3082,7 @@ task.spawn(function()
         task.wait(FISH_DELAY)
         if USE_AUTO_FISH and not Fish.ready() then
             USE_AUTO_FISH = false
+            Fish.refuseT = tick()
             autoFishBtn.Text = "Auto Fish: OFF"
             autoFishBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
             Fish.live = true
@@ -3850,6 +3103,15 @@ task.spawn(function()
     task.wait(3)
     while true do
         task.wait(0.5)
+        pcall(function()
+            if USE_AUTO_FISH then
+                fishStatusLabel.Text = "Status: Running"
+            elseif Fish.refuseT and tick() - Fish.refuseT < 6 then
+                fishStatusLabel.Text = "Idle: remote belum siap (Start Spy di Settings, mancing manual 1x)"
+            else
+                fishStatusLabel.Text = "Status: Idle"
+            end
+        end)
         if USE_AUTO_FISH and Fish.stopAnimOn then pcall(Fish.stopAnims) end
         if USE_AUTO_FISH and Fish.live then pcall(Fish.render) end
     end
