@@ -125,6 +125,53 @@ local CP_LIST = {
     Vector3.new(-6766, 1313, -10083),
 }
 
+-- ====== CP CUSTOM (save/load) ======
+-- Satu tabel supaya hemat slot local (batas Luau 200). Semua akses file executor di-guard + pcall
+-- (Delta di beberapa device tidak punya writefile/readfile -> fungsi return false, script tetap jalan).
+local CPStore = {
+    file = "RouteTools/custom_cps.json",
+    dir = "RouteTools",
+    defaults = {},
+}
+for i, cp in ipairs(CP_LIST) do CPStore.defaults[i] = cp end
+
+function CPStore.save()
+    if not writefile then return false end
+    local ok = pcall(function()
+        if isfolder and makefolder and not isfolder(CPStore.dir) then makefolder(CPStore.dir) end
+        local data = {}
+        for i, cp in ipairs(CP_LIST) do
+            data[i] = { x = cp.X, y = cp.Y, z = cp.Z }
+        end
+        writefile(CPStore.file, game:GetService("HttpService"):JSONEncode(data))
+    end)
+    return ok
+end
+
+function CPStore.load()
+    if not (readfile and isfile) then return false end
+    local loaded = false
+    pcall(function()
+        if not isfile(CPStore.file) then return end
+        local data = game:GetService("HttpService"):JSONDecode(readfile(CPStore.file))
+        if type(data) ~= "table" then return end
+        for i, pos in ipairs(data) do
+            if CP_LIST[i] and type(pos) == "table"
+                and type(pos.x) == "number" and type(pos.y) == "number" and type(pos.z) == "number" then
+                CP_LIST[i] = Vector3.new(pos.x, pos.y, pos.z)
+                loaded = true
+            end
+        end
+    end)
+    return loaded
+end
+
+function CPStore.reset()
+    for i, cp in ipairs(CPStore.defaults) do CP_LIST[i] = cp end
+end
+
+CPStore.load()
+
 local RESET_POS = Vector3.new(-6828, 1314, -9902)
 
 -- ====== STATE ======
@@ -385,6 +432,27 @@ end
 
 local tpNextBtn = makeButton(cpScroll, "Next CP", Color3.fromRGB(50, 120, 190), 2)
 local tpPrevBtn = makeButton(cpScroll, "Prev CP", Color3.fromRGB(50, 120, 190), 3)
+CPStore.updateBtn = makeButton(cpScroll, "Update CP (Current Pos)", Color3.fromRGB(200, 130, 30), 4)
+CPStore.saveBtn = makeButton(cpScroll, "Save CPs to File", Color3.fromRGB(50, 160, 70), 5)
+CPStore.resetBtn = makeButton(cpScroll, "Reset CPs to Default", Color3.fromRGB(200, 50, 50), 6)
+CPStore.infoLabel = makeLabel(cpScroll, "CP List:", Color3.fromRGB(200, 200, 200), 7, 270)
+CPStore.infoLabel.TextWrapped = true
+CPStore.infoLabel.TextSize = 9
+CPStore.infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+CPStore.infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+CPStore.deleteBtn = makeButton(cpScroll, "Delete Saved CPs", Color3.fromRGB(120, 60, 60), 8)
+
+-- daftar CP + koordinat; CP aktif ditandai >>>
+function CPStore.updateInfo()
+    pcall(function()
+        local lines = {}
+        for i, cp in ipairs(CP_LIST) do
+            lines[i] = ((i == currentIndex) and ">>> " or "    ") .. "CP " .. i .. ": "
+                .. math.floor(cp.X) .. ", " .. math.floor(cp.Y) .. ", " .. math.floor(cp.Z)
+        end
+        CPStore.infoLabel.Text = table.concat(lines, "\n")
+    end)
+end
 
 -- ====== TAB 3: FISHING ======
 local fishTab, fishScroll = makeContentTab()
@@ -700,6 +768,7 @@ local function highlightCP(idx)
     if cpLabel then
         cpLabel.Text = "CP: " .. idx .. " / " .. #CP_LIST
     end
+    CPStore.updateInfo()
     for i, b in ipairs(cpButtons) do
         if i == idx then
             b.BackgroundColor3 = Color3.fromRGB(50, 160, 70)
@@ -2650,6 +2719,74 @@ icon.MouseButton1Click:Connect(safe(function()
     panel.Visible = true
     icon.Visible = false
 end))
+
+-- ====== LOGIC TOMBOL: EDIT CP LIVE ======
+-- teks tombol berubah sebentar lalu kembali (tanpa blok handler)
+function CPStore.flash(btn, text, normal, color, normalColor)
+    btn.Text = text
+    if color then btn.BackgroundColor3 = color end
+    task.delay(1.5, function()
+        pcall(function()
+            btn.Text = normal
+            if normalColor then btn.BackgroundColor3 = normalColor end
+        end)
+    end)
+end
+
+-- CP terdekat dari posisi sekarang
+function CPStore.findNearest()
+    local root = getRoot()
+    if not root then return nil end
+    local nearest, nearestDist = nil, math.huge
+    for i, cp in ipairs(CP_LIST) do
+        local d = (cp - root.Position).Magnitude
+        if d < nearestDist then nearest, nearestDist = i, d end
+    end
+    return nearest, nearestDist
+end
+
+CPStore.updateBtn.MouseButton1Click:Connect(safe(function()
+    local root = getRoot()
+    if not root then
+        CPStore.flash(CPStore.updateBtn, "No Character!", "Update CP (Current Pos)")
+        return
+    end
+    -- < 20 studs dari sebuah CP -> CP terdekat itu; selain itu pakai currentIndex
+    local nearest, dist = CPStore.findNearest()
+    local idx = (nearest and dist < 20) and nearest or currentIndex
+    if not CP_LIST[idx] then return end
+    -- teleport() menambah TELEPORT_OFFSET, jadi simpan posisi dikurangi offset supaya mendarat di titik yang sama
+    local ok = pcall(function() CP_LIST[idx] = root.Position - TELEPORT_OFFSET end)
+    if not ok then return end
+    CPStore.updateInfo()
+    CPStore.flash(CPStore.updateBtn, "CP " .. idx .. " Updated (dist " .. math.floor(dist or 0) .. ")",
+        "Update CP (Current Pos)", Color3.fromRGB(50, 160, 70), Color3.fromRGB(200, 130, 30))
+end))
+
+CPStore.saveBtn.MouseButton1Click:Connect(safe(function()
+    local ok = CPStore.save()
+    CPStore.flash(CPStore.saveBtn, ok and "Saved!" or "Save Failed", "Save CPs to File")
+end))
+
+-- reset ke koordinat bawaan script (in-memory); file tersimpan tidak disentuh
+CPStore.resetBtn.MouseButton1Click:Connect(safe(function()
+    CPStore.reset()
+    CPStore.updateInfo()
+    CPStore.flash(CPStore.resetBtn, "Reset Done", "Reset CPs to Default")
+end))
+
+CPStore.deleteBtn.MouseButton1Click:Connect(safe(function()
+    local deleted = false
+    pcall(function()
+        if delfile and isfile and isfile(CPStore.file) then
+            delfile(CPStore.file)
+            deleted = true
+        end
+    end)
+    CPStore.flash(CPStore.deleteBtn, deleted and "Deleted!" or "No File", "Delete Saved CPs")
+end))
+
+CPStore.updateInfo()
 
 -- ====== LOGIC TOMBOL ======
 for i, b in ipairs(cpButtons) do
