@@ -577,7 +577,49 @@ function Cos.findSellRemote()
     return Cos.sellRemoteObj
 end
 
--- satu panggilan per klik; hasil ke log Cosmetics, status singkat di teks tombol
+Cos.autoYes = true
+Cos.autoYesBtn = makeButton(fishScroll, "Auto Confirm Yes: ON", Color3.fromRGB(50, 160, 70), 34)
+
+-- tombol konfirmasi yang sedang tampil (Yes / Ya / Konfirmasi / OK), bukan milik GUI kita
+function Cos.findYesButton()
+    local found
+    pcall(function()
+        for _, obj in ipairs(playerGui:GetDescendants()) do
+            if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible then
+                local sg = obj:FindFirstAncestorOfClass("ScreenGui")
+                if sg and sg.Enabled and sg.Name ~= "RoutePanel" and sg.Name ~= "RouteIcon" and sg.Name ~= "RouteError" then
+                    local txt = obj:IsA("TextButton") and obj.Text or ""
+                    if txt == "" then
+                        local lbl = obj:FindFirstChildWhichIsA("TextLabel", true)
+                        txt = lbl and lbl.Text or ""
+                    end
+                    txt = string.lower((txt:gsub("^%s+", ""):gsub("%s+$", "")))
+                    if txt == "yes" or txt == "ya" or txt == "konfirmasi" or txt == "ok" then
+                        found = obj
+                        return
+                    end
+                end
+            end
+        end
+    end)
+    return found
+end
+
+-- klik dengan 3 metode, semua pcall; true kalau minimal satu tidak error
+function Cos.autoClickButton(button)
+    if not button or not button.Parent then return false end
+    local any = false
+    if pcall(function() button.MouseButton1Click:Fire() end) then any = true end
+    if pcall(function() button:Activate() end) then any = true end
+    if pcall(function()
+        local vu = game:GetService("VirtualUser")
+        local pos = button.AbsolutePosition + button.AbsoluteSize / 2
+        vu:ClickButton1(pos)
+    end) then any = true end
+    return any
+end
+
+-- satu alur per klik; hasil per step ke log Cosmetics, status singkat di teks tombol
 function Cos.remoteSell()
     if Cos.sellBusy then return end
     Cos.sellBusy = true
@@ -599,22 +641,69 @@ function Cos.remoteSell()
         return
     end
     setBtn("Selling...")
-    local ok, err = pcall(function()
-        if remote:IsA("RemoteFunction") then
-            remote:InvokeServer()
-        else
-            remote:FireServer()
+    local lines = {}
+    local function step(msg)
+        table.insert(lines, "[Sell] " .. msg)
+        Cos.setText(table.concat(lines, "\n"))
+    end
+    local function invoke(r, ...)
+        local args = table.pack(...)
+        return pcall(function()
+            if r:IsA("RemoteFunction") then
+                return r:InvokeServer(table.unpack(args, 1, args.n))
+            end
+            r:FireServer(table.unpack(args, 1, args.n))
+        end)
+    end
+
+    step("Step 1 OK (remote " .. remote.Name .. ")")
+
+    -- Step 2: InfoJual("semua") memunculkan prompt konfirmasi (opsional kalau remote tidak ada)
+    local info = Cos.findNamed("InfoJual")
+    if info then
+        local okI, errI = invoke(info, "semua")
+        step(okI and "Step 2 OK (InfoJual)" or ("Step 2 Error: " .. tostring(errI)))
+    else
+        step("Step 2 skip (InfoJual tidak ditemukan)")
+    end
+    task.wait(0.3)
+
+    -- Step 3-4: cari & klik tombol Yes (retry tiap 0.1s, maks 3s)
+    if Cos.autoYes and info then
+        local yes
+        local t0 = tick()
+        while tick() - t0 < 3 do
+            yes = Cos.findYesButton()
+            if yes then break end
+            task.wait(0.1)
         end
-    end)
+        if yes then
+            local clicked = Cos.autoClickButton(yes)
+            step(clicked and ("Step 3 OK Auto-clicked Yes (" .. yes:GetFullName() .. ")") or "Step 3 click gagal")
+        else
+            step("Step 3 Prompt Yes not found, manual required")
+            setBtn("Klik Yes manual!")
+        end
+        task.wait(0.3)
+    else
+        step("Step 3 skip (Auto Confirm OFF / tanpa prompt)")
+    end
+
+    -- Step 5: JualSemua (cadangan kalau prompt tidak muncul)
+    local ok, err = invoke(remote)
+    step(ok and ("Step 4 OK Success via " .. remote.Name) or ("Step 4 Error: " .. tostring(err)))
+
     if ok then
-        -- sinkronisasi inventory seperti alur game: AmbilSemua() sekali setelah jeda 0.2s
+        -- Step 6: sinkronisasi inventory seperti alur game
         task.wait(0.2)
         local ambil = Cos.ambilSemuaRemote
         if ambil and ambil.Parent and ambil:IsA("RemoteFunction") then
-            pcall(function() ambil:InvokeServer() end)
+            local okA, errA = invoke(ambil)
+            step(okA and "Step 5 OK (AmbilSemua)" or ("Step 5 Error: " .. tostring(errA)))
+        else
+            step("Step 5 skip (AmbilSemua tidak ada)")
         end
     end
-    Cos.setText(ok and ("[Sell] Success via " .. remote.Name) or ("[Sell] Error: " .. tostring(err)))
     task.wait(0.5)
     setBtn(ok and "Sold!" or "Error")
     task.wait(1.5)
@@ -3471,6 +3560,12 @@ Cos.favBtn.MouseButton1Click:Connect(safe(function()
             Cos.setText("[Fav] Error: " .. tostring(err))
         end
     end)
+end))
+
+Cos.autoYesBtn.MouseButton1Click:Connect(safe(function()
+    Cos.autoYes = not Cos.autoYes
+    Cos.autoYesBtn.Text = "Auto Confirm Yes: " .. (Cos.autoYes and "ON" or "OFF")
+    Cos.autoYesBtn.BackgroundColor3 = Cos.autoYes and Color3.fromRGB(50, 160, 70) or Color3.fromRGB(120, 120, 120)
 end))
 
 Cos.sellRemote.MouseButton1Click:Connect(safe(function()

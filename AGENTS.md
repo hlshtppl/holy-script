@@ -155,6 +155,10 @@ ScreenGui (RoutePanel, DisplayOrder = max)
 - **Fishing** 🎣 — Auto Fish toggle, Fishing Mode (Fast/Safe), Scan Fishing Remotes, Test Fishing, fishDebugLabel
 - **Tools** 💾 — pendingLabel, Resume Pending, Tandai Pending, Clear Pending, Scan CP Server, debugLabel (CP server)
 - **Settings** ⚙️ — Anti-AFK, TP Delay, Walk Radius, Walk Move
+- **Cosmetics** `C` — Start/Stop Spy, Replay Last, Get Skin List, Clear Log, label log (`Cos.log`). Lihat bagian "Tab Cosmetics" di bawah.
+- Tab **Fishing** juga memuat (ditambah belakangan): Remote Sell Fish (No NPC), Debug AmbilSemua, TextBox Filter Mutasi/Rarity, Favorite by Filter. Tombolnya dibuat di bagian kode Cosmetics (tabel `Cos`), tapi parent-nya `fishScroll`.
+
+**Sidebar scrollable:** `sidebar` adalah `ScrollingFrame` (`AutomaticCanvasSize = Y`, scrollbar 4px). Padding list 6, tinggi item tab 56. Urutan `tabFrames` harus sama dengan urutan `tabDefs` (Cosmetics = tab ke-6, dibuat setelah Settings). Di HP, geser sidebar dari celah antar-tab; tombol tab menangkap sentuhan lebih dulu.
 
 **Minimize jadi icon:**
 - Klik `−` → panel `Visible = false`, muncul icon bulat 40×40 hijau (`#32A046`, teks "RT")
@@ -174,6 +178,48 @@ ScreenGui (RoutePanel, DisplayOrder = max)
 - Tab aktif: `102`
 - Icon minimized: `1000`
 - Resize handle: `50`
+
+---
+
+## 🎬 Anti-Cutscene & Anti-Shake (Secret)
+
+`Fish.cutsceneTick()` (skip cutscene: animasi, kamera, GUI, beam) ditambah pembersihan di `Fish.cleanTick()`. Loop gabungan 0.1s di akhir script jalan hanya saat `USE_AUTO_FISH and Fish.stopAnimOn`:
+
+- `Fish.forceCameraStable()` — `CameraType` balik ke Custom + `CameraSubject` = Humanoid. CFrame kamera hanya dipaksa saat `cutsceneActive` (kalau dipaksa terus, kamera pemain terkunci).
+- `Fish.resetPlayerVelocity()` — nol-kan `AssemblyLinearVelocity` / `AssemblyAngularVelocity` root.
+- `Fish.destroyCutsceneEffects()` (tiap 0.2s, hanya saat `cutsceneActive`) — hapus `ParticleEmitter`/`Beam`/`Attachment` ber-nama beam/particle/flash/shake/burst/cutscene/secret/effect. Karakter sendiri dan karakter pemain lain dikecualikan; `BasePart` TIDAK dihapus (bisa merusak map).
+- `Fish.destroySecretGui()` (tiap 0.2s) — hapus ScreenGui game ber-nama cutscene/secret/cinematic/reveal/intro. "catch"/"notification" SENGAJA tidak disentuh: deteksi hasil tangkapan membaca label di sana. GUI kita (`RoutePanel`, `RouteIcon`, `RouteError`) dikecualikan.
+- Batasan: kalau getaran dari modul kamera di RenderStep, interval 0.1s mungkin kurang; opsi lanjutan `RunService:BindToRenderStep` prioritas kamera.
+
+---
+
+## 🧴 Tab Cosmetics (Spy & Observasi Network)
+
+Spy (hook `__namecall`, fallback `hookfunction`) sekarang menulis ke `Cos.log` (tab Cosmetics), bukan `fishDebugLabel`.
+
+- **Start Spy / Stop Spy / Clear Log** — Stop menampilkan ringkasan remote unik + jumlah panggilan.
+- **Filter `[NET-OBSERVE]`** — di `spyRecord`, remote yang namanya mengandung `skin`, `title`, `equip`, `inventory`, `wear` diberi prefix itu (nama + format argumen). Hanya mencatat, tanpa aksi.
+- **Replay Last** — `Spy.last` menyimpan remote + argumen asli panggilan terakhir; tombol mengulangnya sekali lewat `pcall`, jeda 0.5s, tidak bisa ditumpuk. TIDAK ada input payload bebas.
+- **Get Skin List** — `DaftarSkin:InvokeServer()` sekali tanpa argumen, hasil lewat `Cos.tableToString` (kedalaman 3, maks 60 item).
+- **Helper di tabel `Cos`** (slot local script hampir penuh, batas 200): `Cos.setText`, `Cos.tableToString`, `Cos.findNamed(name)` (cache per nama), `Cos.fetchInventory`, `Cos.makeBox`.
+
+**Sengaja TIDAK dibuat:** tombol equip skin/rod dengan nama bebas, "try all skins" (loop ID), payload TextBox ke remote skin/title. Itu brute-force otorisasi server untuk item yang belum dimiliki — ditolak. Jangan tambahkan kembali.
+
+---
+
+## 💰 Remote Sell Fish (No NPC)
+
+Tombol di tab Fishing. Hasil spy jual manual di NPC: `InfoJual("semua")`, `JualSemua()`, `AmbilSemua()` (semua InvokeServer).
+
+- `Cos.findSellRemote()` — scan ReplicatedStorage sekali (cache), prioritas: `JualSemua`, `SellFish`, `SellAllFish`, `SellAll`, `JualIkan`, `Jual`. Sekaligus cache `AmbilSemua` ke `Cos.ambilSemuaRemote`.
+- `Cos.remoteSell()` — tolak kalau Auto Fish ON; 1x `JualSemua`, tunggu 0.2s, 1x `AmbilSemua` (refresh inventory), semua `pcall`. Tombol: "Selling..." → "Sold!"/"Error"/"Not Found" 1.5s. Tombol "Sell All Fish" lama (`SellFish`) tetap ada.
+
+---
+
+## ⭐ Favorite by Filter (Mutasi / Rarity)
+
+- **Debug AmbilSemua** — invoke sekali, tampilkan 3 entri pertama ke log Cosmetics. Jalankan dulu untuk tahu struktur data.
+- **Favorite by Filter** — filter koma-terpisah, case-insensitive, "mengandung". Mutasi + rarity keduanya diisi = AND. Kedua kosong = ditolak. Field dicari dari kandidat nama (`uuid/UUID/id`, `mutation/mutasi/variant`, `rarity/kelangkaan/tier`, UUID cadangan `item[1]` atau key dict). Kalau field yang difilter tidak ada di 5 item pertama → batal dengan pesan "Struktur data tidak dikenali". Per item cocok: `TandaiFavorit:FireServer(uuid, true)` lewat `pcall`, `task.wait(0.1)`. Log total.
 
 ---
 
@@ -579,9 +625,14 @@ Sebelum push ke GitHub, cek:
 | v11 | Auto-fish via game "Automatic" button + spam click reel skip + UI-only logging |
 | v12 | ImageButton position detection + aggressive spam click multi-method |
 | v13 | Blatant fishing (remote-based instant) + remote discovery + fire/invoke |
+| v14 | Anti-shake + bersihkan efek/GUI secret (`Fish.cleanTick`) |
+| v15 | Tab Cosmetics: spy log dipindah, filter `[NET-OBSERVE]`, Replay Last, Get Skin List, Clear Log |
+| v16 | Remote Sell Fish via `JualSemua` + `AmbilSemua` |
+| v17 | Favorite by Filter (mutasi/rarity) + Debug AmbilSemua |
+| v18 | Sidebar jadi ScrollingFrame (6 tab) |
 
 ---
 
 **Maintainer**: hlshtppl
-**Terakhir diupdate**: 2026-10-16
+**Terakhir diupdate**: 2026-10-17
 **File**: `src/StarterPlayerScripts/RouteTools.client.lua`
