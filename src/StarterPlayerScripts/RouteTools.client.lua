@@ -266,7 +266,7 @@ sidebar.ZIndex = 1
 sidebar.Parent = panel
 
 local sidebarList = Instance.new("UIListLayout")
-sidebarList.Padding = UDim.new(0, 6)
+sidebarList.Padding = UDim.new(0, 2)
 sidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 sidebarList.SortOrder = Enum.SortOrder.LayoutOrder
 sidebarList.Parent = sidebar
@@ -494,13 +494,6 @@ sellFishBtn.LayoutOrder = 8
 scanRemotesBtn.Visible = false   -- diganti Scan Fishing Remotes (baru, verify remote)
 fishDebugLabel.LayoutOrder = 11
 
--- Remote spy: WAJIB dipakai dulu (Start -> mancing manual 1x -> Stop)
-local spyBtns = {
-    start = makeButton(fishScroll, "Start Spy", Color3.fromRGB(50, 160, 70), 4),
-    stop = makeButton(fishScroll, "Stop Spy", Color3.fromRGB(200, 50, 50), 5),
-    clear = makeButton(fishScroll, "Clear Spy Log", Color3.fromRGB(120, 120, 120), 6),
-}
-
 -- ====== TAB 4: TOOLS ======
 local toolsTab, toolsScroll = makeContentTab()
 table.insert(tabFrames, toolsTab)
@@ -527,6 +520,29 @@ local tpDelayBtn = makeButton(settingsScroll, "TP Delay: 0.5s", Color3.fromRGB(1
 local walkRadiusBtn = makeButton(settingsScroll, "Walk Radius: 6", Color3.fromRGB(120, 120, 120), 2)
 local walkSpeedBtn = makeButton(settingsScroll, "Walk Move: 0.08s", Color3.fromRGB(120, 120, 120), 3)
 
+-- ====== TAB 6: COSMETICS (remote spy + observasi network) ======
+-- Remote spy: WAJIB dipakai dulu (Start -> mancing manual 1x -> Stop)
+local Cos = {}
+local cosTab, cosScroll = makeContentTab()
+table.insert(tabFrames, cosTab)
+
+Cos.start = makeButton(cosScroll, "Start Spy", Color3.fromRGB(50, 160, 70), 0)
+Cos.stop = makeButton(cosScroll, "Stop Spy", Color3.fromRGB(200, 50, 50), 1)
+Cos.replay = makeButton(cosScroll, "Replay Last", Color3.fromRGB(200, 130, 30), 2)
+Cos.clear = makeButton(cosScroll, "Clear Log", Color3.fromRGB(120, 120, 120), 3)
+Cos.log = makeLabel(cosScroll, "[spy] log kosong", Color3.fromRGB(150, 255, 150), 4, 300)
+Cos.log.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
+Cos.log.TextSize = 9
+Cos.log.TextWrapped = true
+Cos.log.TextXAlignment = Enum.TextXAlignment.Left
+Cos.log.TextYAlignment = Enum.TextYAlignment.Top
+
+function Cos.setText(text)
+    if Cos.log and Cos.log.Parent then
+        pcall(function() Cos.log.Text = text end)
+    end
+end
+
 -- ====== TAB BUTTONS (SIDEBAR) ======
 local tabDefs = {
     { emoji = "R", name = "Route" },
@@ -534,6 +550,7 @@ local tabDefs = {
     { emoji = "F", name = "Fishing" },
     { emoji = "T", name = "Tools" },
     { emoji = "S", name = "Settings" },
+    { emoji = "C", name = "Cosmetics" },
 }
 
 for i, def in ipairs(tabDefs) do
@@ -541,7 +558,7 @@ for i, def in ipairs(tabDefs) do
 
     local item = Instance.new("Frame")
     item.LayoutOrder = i
-    item.Size = UDim2.new(0, 40, 0, 56)
+    item.Size = UDim2.new(0, 40, 0, 54)
     item.BackgroundTransparency = 1
     item.BorderSizePixel = 0
     item.Parent = sidebar
@@ -1489,6 +1506,94 @@ do
         end
     end
 
+    -- ====== ANTI SHAKE + BERSIH-BERSIH EFEK SECRET ======
+    -- (slot local penuh -> semua di tabel Fish; semua pcall + null check)
+    Fish.lastCleanT = 0
+
+    local function isOtherCharacter(obj)
+        local m = obj:FindFirstAncestorOfClass("Model")
+        while m do
+            if Players:GetPlayerFromCharacter(m) then return true end
+            m = m.Parent and m.Parent:FindFirstAncestorOfClass("Model")
+        end
+        return false
+    end
+
+    -- kamera: selalu balik ke Custom + subject Humanoid; CFrame dipaksa hanya saat cutscene aktif
+    -- (kalau dipaksa terus, kamera pemain ikut terkunci)
+    function Fish.forceCameraStable()
+        local cam = workspace.CurrentCamera
+        local char = player.Character
+        if not cam or not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not root or not hum then return end
+        pcall(function()
+            if cam.CameraType ~= Enum.CameraType.Custom then cam.CameraType = Enum.CameraType.Custom end
+            if cam.CameraSubject ~= hum then cam.CameraSubject = hum end
+        end)
+        if cutsceneActive then
+            pcall(function()
+                cam.CFrame = CFrame.lookAt(root.Position + Vector3.new(0, 5, 15), root.Position)
+            end)
+        end
+    end
+
+    function Fish.resetPlayerVelocity()
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        pcall(function()
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end)
+    end
+
+    -- hanya saat cutscene aktif; ParticleEmitter/Beam/Attachment ber-nama efek, bukan karakter siapa pun
+    function Fish.destroyCutsceneEffects()
+        if not cutsceneActive then return end
+        local char = player.Character
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            pcall(function()
+                if not obj.Parent then return end
+                if not (obj:IsA("ParticleEmitter") or obj:IsA("Beam") or obj:IsA("Attachment")) then return end
+                if char and obj:IsDescendantOf(char) then return end
+                if isOtherCharacter(obj) then return end
+                local n = obj.Name:lower()
+                if n:find("beam") or n:find("particle") or n:find("flash") or n:find("shake")
+                    or n:find("burst") or n:find("cutscene") or n:find("secret") or n:find("effect") then
+                    obj:Destroy()
+                end
+            end)
+        end
+    end
+
+    -- GUI cutscene/secret milik game (bukan GUI kita); "catch"/"notification" sengaja tidak disentuh
+    -- karena deteksi hasil tangkapan membaca label di sana
+    function Fish.destroySecretGui()
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            pcall(function()
+                if gui.Name == "RoutePanel" or gui.Name == "RouteIcon" or gui.Name == "RouteError" then return end
+                local n = gui.Name:lower()
+                if n:find("cutscene") or n:find("secret") or n:find("cinematic") or n:find("reveal") or n:find("intro") then
+                    gui:Destroy()
+                end
+            end)
+        end
+    end
+
+    -- dipanggil tiap 0.1s dari loop gabungan di akhir script
+    function Fish.cleanTick()
+        pcall(Fish.forceCameraStable)
+        pcall(Fish.resetPlayerVelocity)
+        local now = tick()
+        if now - Fish.lastCleanT > 0.2 then
+            Fish.lastCleanT = now
+            pcall(Fish.destroyCutsceneEffects)
+            pcall(Fish.destroySecretGui)
+        end
+    end
+
     -- tes manual: jalankan skip selama 5 detik (munculkan cutscene saat tes berjalan, mis. mancing ikan langka)
     function Fish.testSkipCutscene()
         cycleT0 = tick()
@@ -2211,7 +2316,7 @@ do
         local from = math.max(1, #spyLog - 11)
         for i = from, #spyLog do table.insert(lines, spyLog[i]) end
         if #lines == 0 then lines = { "[spy] log kosong" } end
-        setFishText(table.concat(lines, "\n"))
+        Cos.setText(table.concat(lines, "\n"))
     end
 
     local function logSpy(msg)
@@ -2270,7 +2375,18 @@ do
         local now = tick()
         local dt = lastSpyT and (now - lastSpyT) or 0
         lastSpyT = now
-        logSpy(string.format("+%.2fs ", dt) .. "[" .. method .. "] " .. remote.Name .. "(" .. argStr .. ")")
+        -- observasi saja: tandai remote terkait kostum (nama + format argumen), tanpa aksi
+        local lname = string.lower(remote.Name)
+        local tag = ""
+        for _, kw in ipairs({ "skin", "title", "equip", "inventory", "wear" }) do
+            if string.find(lname, kw, 1, true) then
+                tag = "[NET-OBSERVE] "
+                break
+            end
+        end
+        logSpy(tag .. string.format("+%.2fs ", dt) .. "[" .. method .. "] " .. remote.Name .. "(" .. argStr .. ")")
+        -- simpan panggilan terakhir (argumen asli) untuk Replay Last
+        Spy.last = { method = method, remote = remote, args = table.pack(...) }
         local key = method .. " " .. remote.Name
         local c = spyCounts[key]
         if not c then
@@ -2437,19 +2553,43 @@ do
         end
         for _, l in ipairs(lines) do table.insert(spyLog, l) end
         while #spyLog > 50 do table.remove(spyLog, 1) end
-        setFishText(table.concat(lines, "\n"))
+        Cos.setText(table.concat(lines, "\n"))
     end
 
     local function clearSpyLog()
         spyLog = {}
         spyCounts = {}
-        setFishText("[spy] log dibersihkan")
+        Cos.setText("[spy] log dibersihkan")
+    end
+
+    -- ulang panggilan terakhir yang tertangkap, argumen asli, semua lewat pcall; jeda 0.5s, tidak bisa ditumpuk
+    local function replayLast()
+        if Spy.replaying then return end
+        local last = Spy.last
+        if not last or not last.remote or not last.remote.Parent then
+            logSpy("[replay] belum ada panggilan tertangkap")
+            pcall(spyRender)
+            return
+        end
+        Spy.replaying = true
+        local ok, err = pcall(function()
+            if last.method == "InvokeServer" then
+                last.remote:InvokeServer(table.unpack(last.args, 1, last.args.n))
+            else
+                last.remote:FireServer(table.unpack(last.args, 1, last.args.n))
+            end
+        end)
+        logSpy("[replay] " .. last.method .. " " .. last.remote.Name .. (ok and " ok" or (" err: " .. tostring(err))))
+        pcall(spyRender)
+        task.wait(0.5)
+        Spy.replaying = false
     end
 
     Spy.pause = SPY_PAUSE_AUTOFISH
     Spy.start = startSpy
     Spy.stop = stopSpy
     Spy.clear = clearSpyLog
+    Spy.replay = replayLast
 end
 
 -- ====== BACKGROUND LOOPS ======
@@ -3010,24 +3150,23 @@ scanRemotesBtn.MouseButton1Click:Connect(safe(function()
 end))
 
 -- ====== LOGIC TOMBOL: REMOTE SPY ======
-spyBtns.start.MouseButton1Click:Connect(safe(function()
+Cos.start.MouseButton1Click:Connect(safe(function()
     local ok, err = pcall(Spy.start)
-    if not ok then setFishText("[spy] err: " .. tostring(err)) end
+    if not ok then Cos.setText("[spy] err: " .. tostring(err)) end
 end))
 
-spyBtns.stop.MouseButton1Click:Connect(safe(function()
+Cos.stop.MouseButton1Click:Connect(safe(function()
     local ok, err = pcall(Spy.stop)
-    if not ok then setFishText("[spy] err: " .. tostring(err)) end
+    if not ok then Cos.setText("[spy] err: " .. tostring(err)) end
 end))
 
-spyBtns.clear.MouseButton1Click:Connect(safe(function()
+Cos.clear.MouseButton1Click:Connect(safe(function()
     pcall(Spy.clear)
 end))
 
--- spy memakai label yang sama -> hentikan refresh status Fish selama spy dipakai
-for _, b in pairs(spyBtns) do
-    b.MouseButton1Click:Connect(safe(function() Fish.live = false end))
-end
+Cos.replay.MouseButton1Click:Connect(safe(function()
+    task.spawn(function() pcall(Spy.replay) end)
+end))
 
 -- ====== LOGIC TOMBOL: INSTANT FISHING ======
 fishModeBtn.MouseButton1Click:Connect(safe(function()
@@ -3327,6 +3466,17 @@ task.spawn(function()
         task.wait(Fish.aggSkip and 0.05 or 0.2)
         if USE_AUTO_FISH and Fish.skipCutscene then
             pcall(Fish.cutsceneTick)
+        end
+    end
+end)
+
+-- anti shake + bersihkan efek/GUI secret: gabungan, tiap 0.1s saat Auto Fish ON + Stop Anim ON
+task.spawn(function()
+    task.wait(3)
+    while true do
+        task.wait(0.1)
+        if USE_AUTO_FISH and Fish.stopAnimOn then
+            pcall(Fish.cleanTick)
         end
     end
 end)
