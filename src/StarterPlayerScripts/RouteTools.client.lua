@@ -877,6 +877,12 @@ local Fish = {
     spamDuration = 3,       -- lama spam klik minigame (detik)
     spamTarget = "Auto",    -- Auto | Quick | Berhenti | Screen
     skipCutscene = true,    -- skip animasi cutscene ikan langka (animasi + kamera + GUI)
+    aggSkip = true,         -- Aggressive Cutscene Skip: tick cepat, grace pendek, matikan ScreenGui cutscene
+    destroyBeam = true,     -- hancurkan BeamParticles/BeamLine (hanya saat cutscene aktif)
+    beamDestroyed = 0,
+    fastSkips = 0,          -- cutscene yang selesai < 0.5s
+    csStart = 0,
+    disabledGui = {},       -- [ScreenGui] = true : yang kita matikan (dinyalakan lagi setelah cutscene)
     spyActive = false,      -- diisi spy
     spyRefs = {},           -- diisi spy: [nama] = objek remote asli (CastEvent, MiniGame, AmbilSemua, TandaSeruBersama, GetKatalog)
     capturedCast = nil,     -- diisi spy: table.pack(false, 20, ...) dari CastEvent asli
@@ -1060,7 +1066,8 @@ do
             "Status: " .. fishStatus,
             "AutoTrig: " .. (Fish.autoTrigger and "ON" or "OFF") .. " | Last marker: "
                 .. (lastMarkerTime and (math.floor(tick() - lastMarkerTime) .. "s lalu") or "-"),
-            "Cutscene: " .. (cutsceneActive and "active" or "none") .. " | Skipped: " .. cutsceneSkipped,
+            "Cutscene: " .. (cutsceneActive and "active" or "none") .. " | Skipped: " .. cutsceneSkipped
+                .. " | Fast: " .. Fish.fastSkips .. " | Beam destroyed: " .. Fish.beamDestroyed,
             "Marker: " .. (markerDetected and "detected" or "not detected") .. " | Source: " .. markerSource,
             "Cycle: " .. string.format("%.1f", lastCycleTime) .. "s | Fish: " .. fishCaught,
             "Last log: " .. logMsg,
@@ -1319,7 +1326,69 @@ do
         hiddenGui = {}
     end
 
-    -- dipanggil tiap ~0.2s saat Auto Fish ON + Skip Cutscene ON
+    -- nama persis saja (bukan find("Beam")) supaya objek game lain tidak ikut hancur
+    function Fish.isBeam(obj)
+        local n = obj.Name
+        return n == "BeamParticles" or n == "BeamLine"
+    end
+
+    function Fish.destroyBeamObj(obj)
+        pcall(function()
+            if obj and obj.Parent and Fish.isBeam(obj)
+                and not (player.Character and obj:IsDescendantOf(player.Character)) then
+                obj:Destroy()
+                Fish.beamDestroyed = Fish.beamDestroyed + 1
+            end
+        end)
+    end
+
+    -- hanya dipanggil saat cutscene aktif
+    function Fish.destroyBeams()
+        pcall(function()
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if Fish.isBeam(obj) then Fish.destroyBeamObj(obj) end
+            end
+        end)
+    end
+
+    -- objek baru yang muncul saat cutscene aktif langsung dihancurkan (tanpa nunggu tick)
+    function Fish.setupBeamHook()
+        if Fish.beamConn then return end
+        pcall(function()
+            Fish.beamConn = workspace.DescendantAdded:Connect(function(obj)
+                if cutsceneActive and Fish.destroyBeam and USE_AUTO_FISH then
+                    Fish.destroyBeamObj(obj)
+                end
+            end)
+        end)
+    end
+
+    -- matikan ScreenGui cutscene (nama cutscene/cinematic/reveal/intro); dinyalakan lagi saat cutscene selesai
+    function Fish.disableCsGuis()
+        pcall(function()
+            for _, gui in ipairs(playerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Enabled and not Fish.disabledGui[gui]
+                    and gui.Name ~= "RoutePanel" and gui.Name ~= "RouteIcon" and gui.Name ~= "RouteError" then
+                    local n = gui.Name:lower()
+                    if n:find("cutscene") or n:find("cinematic") or n:find("reveal") or n:find("intro") then
+                        Fish.disabledGui[gui] = true
+                        gui.Enabled = false
+                    end
+                end
+            end
+        end)
+    end
+
+    function Fish.restoreCsGuis()
+        for gui in pairs(Fish.disabledGui) do
+            pcall(function()
+                if gui.Parent then gui.Enabled = true end
+            end)
+        end
+        Fish.disabledGui = {}
+    end
+
+    -- dipanggil tiap ~0.2s (aggressive: 0.05s) saat Auto Fish ON + Skip Cutscene ON
     function Fish.cutsceneTick()
         local labels = findCutsceneLabels()
         local now = tick()
@@ -1327,13 +1396,16 @@ do
             if not cutsceneActive then
                 cutsceneActive = true
                 cutsceneSkipped = cutsceneSkipped + 1
+                Fish.csStart = now
                 tl("Cutscene detected: '" .. tostring(labels[1].Text) .. "'")
                 log("Cutscene aktif -> skip")
             end
             lastCutsceneSeen = now
-        elseif cutsceneActive and now - lastCutsceneSeen > 1 then
+        elseif cutsceneActive and now - lastCutsceneSeen > (Fish.aggSkip and 0.3 or 1) then
             cutsceneActive = false
+            if lastCutsceneSeen - Fish.csStart < 0.5 then Fish.fastSkips = Fish.fastSkips + 1 end
             restoreHiddenGui()
+            Fish.restoreCsGuis()
             tl("Cutscene selesai")
             render()
         end
@@ -1341,6 +1413,8 @@ do
             stopAllAnimsEverywhere()
             resetCamera()
             hideCutsceneGui(labels)
+            if Fish.aggSkip then Fish.disableCsGuis() end
+            if Fish.destroyBeam then Fish.destroyBeams() end
         elseif fishStatus == "success" then
             resetCamera()
         end
@@ -1360,6 +1434,7 @@ do
             task.wait(0.2)
         end
         restoreHiddenGui()
+        Fish.restoreCsGuis()
         cutsceneActive = false
         log(seen and "Test selesai: cutscene terdeteksi + di-skip" or "Test selesai: tidak ada cutscene terdeteksi")
     end
@@ -1770,7 +1845,7 @@ do
                 local tc = tick()
                 while tick() - tc < 1.2 * k do
                     if Fish.skipCutscene and cutsceneActive then break end
-                    task.wait(0.1)
+                    task.wait(Fish.aggSkip and 0.03 or 0.1)
                 end
             end
 
@@ -3010,6 +3085,29 @@ skipCutBtn.MouseButton1Click:Connect(safe(function()
     pcall(Fish.render)
 end))
 
+-- tombol agresif dibuat di sini (slot local top-level hampir penuh -> simpan di tabel Fish)
+Fish.aggBtn = makeButton(fishScroll, "Aggressive Cutscene Skip: ON", Color3.fromRGB(50, 160, 70), 29)
+Fish.beamBtn = makeButton(fishScroll, "Destroy Beam: ON", Color3.fromRGB(50, 160, 70), 30)
+
+function Fish.setToggle(btn, label, on)
+    btn.Text = label .. (on and ": ON" or ": OFF")
+    btn.BackgroundColor3 = on and Color3.fromRGB(50, 160, 70) or Color3.fromRGB(120, 120, 120)
+end
+
+Fish.aggBtn.MouseButton1Click:Connect(safe(function()
+    Fish.live = true
+    Fish.aggSkip = not Fish.aggSkip
+    Fish.setToggle(Fish.aggBtn, "Aggressive Cutscene Skip", Fish.aggSkip)
+    pcall(Fish.render)
+end))
+
+Fish.beamBtn.MouseButton1Click:Connect(safe(function()
+    Fish.live = true
+    Fish.destroyBeam = not Fish.destroyBeam
+    Fish.setToggle(Fish.beamBtn, "Destroy Beam", Fish.destroyBeam)
+    pcall(Fish.render)
+end))
+
 testSkipBtn.MouseButton1Click:Connect(safe(function()
     Fish.live = true
     testSkipBtn.Text = "Testing 5s..."
@@ -3071,8 +3169,25 @@ end)
 -- skip cutscene: cek tiap 0.2s saat Auto Fish ON + Skip Cutscene ON (semua pcall)
 task.spawn(function()
     task.wait(3)
+    pcall(Fish.setupBeamHook)
+    -- hook CutsceneBroadcast: block FireServer dari client (opsional, semua pcall; remote harus ada)
+    pcall(function()
+        local cs = game:GetService("ReplicatedStorage"):FindFirstChild("CutsceneBroadcast", true)
+        if cs and cs:IsA("RemoteEvent") and getrawmetatable and getnamecallmethod and newcclosure and setreadonly then
+            local mt = getrawmetatable(game)
+            local old = mt.__namecall
+            setreadonly(mt, false)
+            mt.__namecall = newcclosure(function(self, ...)
+                if self == cs and Fish.aggSkip and getnamecallmethod() == "FireServer" then
+                    return
+                end
+                return old(self, ...)
+            end)
+            setreadonly(mt, true)
+        end
+    end)
     while true do
-        task.wait(0.2)
+        task.wait(Fish.aggSkip and 0.05 or 0.2)
         if USE_AUTO_FISH and Fish.skipCutscene then
             pcall(Fish.cutsceneTick)
         end
