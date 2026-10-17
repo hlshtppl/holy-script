@@ -256,17 +256,23 @@ closeBtn.Parent = header
 Instance.new("UICorner", closeBtn)
 
 -- ====== SIDEBAR ======
-local sidebar = Instance.new("Frame")
+local sidebar = Instance.new("ScrollingFrame")
 sidebar.Name = "Sidebar"
 sidebar.Size = UDim2.new(0, 44, 1, -32)
 sidebar.Position = UDim2.new(0, 0, 0, 32)
 sidebar.BackgroundColor3 = Color3.fromRGB(45, 45, 56)   -- #2D2D38
+sidebar.BackgroundTransparency = 0
 sidebar.BorderSizePixel = 0
+sidebar.ScrollBarThickness = 4
+sidebar.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
+sidebar.CanvasSize = UDim2.new(0, 0, 0, 0)
+sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
+sidebar.ScrollingDirection = Enum.ScrollingDirection.Y
 sidebar.ZIndex = 1
 sidebar.Parent = panel
 
 local sidebarList = Instance.new("UIListLayout")
-sidebarList.Padding = UDim.new(0, 2)
+sidebarList.Padding = UDim.new(0, 6)
 sidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 sidebarList.SortOrder = Enum.SortOrder.LayoutOrder
 sidebarList.Parent = sidebar
@@ -529,8 +535,9 @@ table.insert(tabFrames, cosTab)
 Cos.start = makeButton(cosScroll, "Start Spy", Color3.fromRGB(50, 160, 70), 0)
 Cos.stop = makeButton(cosScroll, "Stop Spy", Color3.fromRGB(200, 50, 50), 1)
 Cos.replay = makeButton(cosScroll, "Replay Last", Color3.fromRGB(200, 130, 30), 2)
-Cos.clear = makeButton(cosScroll, "Clear Log", Color3.fromRGB(120, 120, 120), 3)
-Cos.log = makeLabel(cosScroll, "[spy] log kosong", Color3.fromRGB(150, 255, 150), 4, 300)
+Cos.skinList = makeButton(cosScroll, "Get Skin List", Color3.fromRGB(90, 190, 230), 3)
+Cos.clear = makeButton(cosScroll, "Clear Log", Color3.fromRGB(120, 120, 120), 4)
+Cos.log = makeLabel(cosScroll, "[spy] log kosong", Color3.fromRGB(150, 255, 150), 5, 300)
 Cos.log.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
 Cos.log.TextSize = 9
 Cos.log.TextWrapped = true
@@ -541,6 +548,294 @@ function Cos.setText(text)
     if Cos.log and Cos.log.Parent then
         pcall(function() Cos.log.Text = text end)
     end
+end
+
+-- tombol tab Fishing (dibuat di sini karena tabel Cos baru ada di titik ini; slot local hemat)
+Cos.sellRemote = makeButton(fishScroll, "Remote Sell Fish (No NPC)", Color3.fromRGB(200, 180, 60), 29)
+
+-- cari remote jual (urut prioritas); hasil di-cache, scan ReplicatedStorage hanya sampai ketemu
+function Cos.findSellRemote()
+    if Cos.sellRemoteObj and Cos.sellRemoteObj.Parent then return Cos.sellRemoteObj end
+    -- JualSemua = hasil spy (RemoteFunction tanpa argumen); sisanya fallback
+    local names = { "JualSemua", "SellFish", "SellAllFish", "SellAll", "JualIkan", "Jual" }
+    pcall(function()
+        local byName = {}
+        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+            if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and not byName[obj.Name] then
+                byName[obj.Name] = obj
+            end
+        end
+        -- AmbilSemua (refresh inventory setelah jual), di-cache terpisah
+        if byName.AmbilSemua then Cos.ambilSemuaRemote = byName.AmbilSemua end
+        for _, n in ipairs(names) do
+            if byName[n] then
+                Cos.sellRemoteObj = byName[n]
+                return
+            end
+        end
+    end)
+    return Cos.sellRemoteObj
+end
+
+-- satu panggilan per klik; hasil ke log Cosmetics, status singkat di teks tombol
+function Cos.remoteSell()
+    if Cos.sellBusy then return end
+    Cos.sellBusy = true
+    local btn = Cos.sellRemote
+    local normal = "Remote Sell Fish (No NPC)"
+    local function setBtn(t) if btn and btn.Parent then btn.Text = t end end
+    if USE_AUTO_FISH then
+        Cos.setText("[Sell] Matikan Auto Fish dulu")
+        Cos.sellBusy = false
+        return
+    end
+    local remote = Cos.findSellRemote()
+    if not remote then
+        Cos.setText("[Sell] Remote JualSemua tidak ditemukan.")
+        setBtn("Not Found")
+        task.wait(1.5)
+        setBtn(normal)
+        Cos.sellBusy = false
+        return
+    end
+    setBtn("Selling...")
+    local ok, err = pcall(function()
+        if remote:IsA("RemoteFunction") then
+            remote:InvokeServer()
+        else
+            remote:FireServer()
+        end
+    end)
+    if ok then
+        -- sinkronisasi inventory seperti alur game: AmbilSemua() sekali setelah jeda 0.2s
+        task.wait(0.2)
+        local ambil = Cos.ambilSemuaRemote
+        if ambil and ambil.Parent and ambil:IsA("RemoteFunction") then
+            pcall(function() ambil:InvokeServer() end)
+        end
+    end
+    Cos.setText(ok and ("[Sell] Success via " .. remote.Name) or ("[Sell] Error: " .. tostring(err)))
+    task.wait(0.5)
+    setBtn(ok and "Sold!" or "Error")
+    task.wait(1.5)
+    setBtn(normal)
+    Cos.sellBusy = false
+end
+
+-- ====== FAVORITE BY FILTER (mutasi / rarity) ======
+-- UI di tab Fishing (dibuat di sini, lihat catatan tombol Remote Sell); log ke label Cosmetics
+function Cos.makeBox(parent, placeholder, order)
+    local tb = Instance.new("TextBox")
+    tb.LayoutOrder = order
+    tb.Size = UDim2.new(1, -8, 0, 30)
+    tb.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    tb.TextColor3 = Color3.new(1, 1, 1)
+    tb.PlaceholderText = placeholder
+    tb.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
+    tb.Text = ""
+    tb.ClearTextOnFocus = false
+    tb.Font = Enum.Font.Code
+    tb.TextSize = 11
+    tb.Parent = parent
+    Instance.new("UICorner", tb)
+    return tb
+end
+Cos.debugInv = makeButton(fishScroll, "Debug AmbilSemua", Color3.fromRGB(90, 190, 230), 30)
+Cos.mutBox = Cos.makeBox(fishScroll, "Sandy, Ghost, Holographic", 31)
+Cos.rarBox = Cos.makeBox(fishScroll, "Secret, Mythic, Forgotten", 32)
+Cos.favBtn = makeButton(fishScroll, "Favorite by Filter", Color3.fromRGB(200, 180, 60), 33)
+
+-- cari remote by nama (cache per nama)
+Cos.remoteCache = {}
+function Cos.findNamed(name)
+    local c = Cos.remoteCache[name]
+    if c and c.Parent then return c end
+    pcall(function()
+        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+            if obj.Name == name and (obj:IsA("RemoteFunction") or obj:IsA("RemoteEvent")) then
+                Cos.remoteCache[name] = obj
+                return
+            end
+        end
+    end)
+    return Cos.remoteCache[name]
+end
+
+-- invoke AmbilSemua sekali -> ok, data
+function Cos.fetchInventory()
+    local r = Cos.findNamed("AmbilSemua")
+    if not r then return false, "Remote AmbilSemua not found" end
+    if not r:IsA("RemoteFunction") then return false, "AmbilSemua bukan RemoteFunction" end
+    return pcall(function() return r:InvokeServer() end)
+end
+
+-- n item pertama dari array/dict
+function Cos.firstItems(data, n)
+    local out, cnt = {}, 0
+    for k, v in pairs(data) do
+        cnt = cnt + 1
+        if cnt <= n then out[k] = v end
+    end
+    return out, cnt
+end
+
+function Cos.debugInventory()
+    if Cos.invBusy then return end
+    Cos.invBusy = true
+    local ok, data = Cos.fetchInventory()
+    if not ok then
+        Cos.setText("[Inv] Error: " .. tostring(data))
+    elseif typeof(data) ~= "table" then
+        Cos.setText("[Inv] Return bukan table: " .. tostring(data) .. " (" .. typeof(data) .. ")")
+    else
+        local first, total = Cos.firstItems(data, 3)
+        Cos.setText("[Inv] " .. total .. " entri, 3 pertama:\n" .. Cos.tableToString(first))
+    end
+    task.wait(0.5)
+    Cos.invBusy = false
+end
+
+-- "Sandy, Ghost" -> { "sandy", "ghost" }
+function Cos.parseFilter(text)
+    local out = {}
+    for part in string.gmatch(tostring(text or ""), "[^,]+") do
+        local t = string.lower((part:gsub("^%s+", ""):gsub("%s+$", "")))
+        if t ~= "" then table.insert(out, t) end
+    end
+    return out
+end
+
+-- ambil field pertama yang ada dari daftar nama kandidat (nil kalau tidak ada key sama sekali)
+function Cos.pickField(item, names)
+    for _, n in ipairs(names) do
+        if item[n] ~= nil then return true, item[n] end
+    end
+    return false, nil
+end
+
+function Cos.matchAny(value, filters)
+    local v = string.lower(tostring(value or ""))
+    for _, f in ipairs(filters) do
+        if string.find(v, f, 1, true) then return true end
+    end
+    return false
+end
+
+Cos.UUID_KEYS = { "uuid", "UUID", "Uuid", "id", "Id", "ID" }
+Cos.MUT_KEYS = { "mutation", "Mutation", "mutasi", "Mutasi", "variant", "Variant" }
+Cos.RAR_KEYS = { "rarity", "Rarity", "rarita", "kelangkaan", "Kelangkaan", "tier", "Tier" }
+
+-- favorit ikan yang cocok filter; jika mutasi & rarity keduanya diisi, keduanya harus cocok (AND)
+function Cos.favoriteByFilter()
+    if Cos.favBusy then return end
+    Cos.favBusy = true
+    local function done(msg)
+        Cos.setText(msg)
+        Cos.favBusy = false
+    end
+    local mutF = Cos.parseFilter(Cos.mutBox and Cos.mutBox.Text)
+    local rarF = Cos.parseFilter(Cos.rarBox and Cos.rarBox.Text)
+    if #mutF == 0 and #rarF == 0 then return done("[Fav] Isi filter mutasi atau rarity dulu") end
+    local fav = Cos.findNamed("TandaiFavorit")
+    if not fav then return done("[Fav] Remote TandaiFavorit not found") end
+    local ok, data = Cos.fetchInventory()
+    if not ok then return done("[Fav] Error: " .. tostring(data)) end
+    if typeof(data) ~= "table" or next(data) == nil then return done("[Fav] Inventory kosong / nil") end
+
+    -- kumpulkan item bertabel; kalau dict berkunci UUID, key dipakai sebagai UUID cadangan
+    local items = {}
+    for k, v in pairs(data) do
+        if typeof(v) == "table" then table.insert(items, { key = k, item = v }) end
+    end
+    if #items == 0 then return done("[Fav] Struktur data tidak dikenali, jalankan Debug AmbilSemua dulu") end
+
+    -- validasi struktur dari 5 item pertama: field yang difilter harus ada
+    local seenMut, seenRar = false, false
+    for i = 1, math.min(5, #items) do
+        if Cos.pickField(items[i].item, Cos.MUT_KEYS) then seenMut = true end
+        if Cos.pickField(items[i].item, Cos.RAR_KEYS) then seenRar = true end
+    end
+    if (#mutF > 0 and not seenMut) or (#rarF > 0 and not seenRar) then
+        return done("[Fav] Struktur data tidak dikenali, jalankan Debug AmbilSemua dulu")
+    end
+
+    local count, scanned = 0, 0
+    for _, e in ipairs(items) do
+        scanned = scanned + 1
+        local item = e.item
+        local _, uuid = Cos.pickField(item, Cos.UUID_KEYS)
+        if uuid == nil and typeof(item[1]) == "string" then uuid = item[1] end
+        if uuid == nil and typeof(e.key) == "string" then uuid = e.key end
+        if uuid ~= nil then
+            local match = true
+            if #mutF > 0 then
+                local _, m = Cos.pickField(item, Cos.MUT_KEYS)
+                match = match and Cos.matchAny(m, mutF)
+            end
+            if match and #rarF > 0 then
+                local _, r = Cos.pickField(item, Cos.RAR_KEYS)
+                match = match and Cos.matchAny(r, rarF)
+            end
+            if match then
+                local sent = pcall(function() fav:FireServer(uuid, true) end)
+                if sent then count = count + 1 end
+                task.wait(0.1)
+            end
+        end
+    end
+    done("[Fav] " .. count .. " ikan di-favorite (dari " .. scanned .. " entri)")
+end
+
+-- tabel -> teks (kedalaman dan jumlah item dibatasi supaya label tidak meledak)
+function Cos.tableToString(v, depth)
+    depth = depth or 0
+    if typeof(v) ~= "table" then return tostring(v) end
+    if depth >= 3 then return "{...}" end
+    local parts, n = {}, 0
+    for k, x in pairs(v) do
+        n = n + 1
+        if n > 60 then
+            table.insert(parts, "...")
+            break
+        end
+        table.insert(parts, string.rep("  ", depth + 1) .. tostring(k) .. " = " .. Cos.tableToString(x, depth + 1))
+    end
+    return "{\n" .. table.concat(parts, "\n") .. "\n" .. string.rep("  ", depth) .. "}"
+end
+
+-- cari remote DaftarSkin (cache; scan ReplicatedStorage hanya sekali sampai ketemu)
+function Cos.findSkinList()
+    if Cos.skinListRemote and Cos.skinListRemote.Parent then return Cos.skinListRemote end
+    pcall(function()
+        for _, obj in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+            if obj.Name == "DaftarSkin" and (obj:IsA("RemoteFunction") or obj:IsA("RemoteEvent")) then
+                Cos.skinListRemote = obj
+                break
+            end
+        end
+    end)
+    return Cos.skinListRemote
+end
+
+-- satu InvokeServer per klik, tanpa argumen, hasil ditampilkan di log
+function Cos.getSkinList()
+    if Cos.busy then return end
+    Cos.busy = true
+    local remote = Cos.findSkinList()
+    if not remote then
+        Cos.setText("[SkinList] Remote DaftarSkin not found")
+    elseif not remote:IsA("RemoteFunction") then
+        Cos.setText("[SkinList] DaftarSkin bukan RemoteFunction (" .. remote.ClassName .. ")")
+    else
+        local ok, res = pcall(function() return remote:InvokeServer() end)
+        if ok then
+            Cos.setText("[SkinList]\n" .. Cos.tableToString(res))
+        else
+            Cos.setText("[SkinList] Error: " .. tostring(res))
+        end
+    end
+    task.wait(0.5)
+    Cos.busy = false
 end
 
 -- ====== TAB BUTTONS (SIDEBAR) ======
@@ -558,7 +853,7 @@ for i, def in ipairs(tabDefs) do
 
     local item = Instance.new("Frame")
     item.LayoutOrder = i
-    item.Size = UDim2.new(0, 40, 0, 54)
+    item.Size = UDim2.new(0, 40, 0, 56)
     item.BackgroundTransparency = 1
     item.BorderSizePixel = 0
     item.Parent = sidebar
@@ -3162,6 +3457,28 @@ end))
 
 Cos.clear.MouseButton1Click:Connect(safe(function()
     pcall(Spy.clear)
+end))
+
+Cos.debugInv.MouseButton1Click:Connect(safe(function()
+    task.spawn(function() pcall(Cos.debugInventory) end)
+end))
+
+Cos.favBtn.MouseButton1Click:Connect(safe(function()
+    task.spawn(function()
+        local ok, err = pcall(Cos.favoriteByFilter)
+        if not ok then
+            Cos.favBusy = false
+            Cos.setText("[Fav] Error: " .. tostring(err))
+        end
+    end)
+end))
+
+Cos.sellRemote.MouseButton1Click:Connect(safe(function()
+    task.spawn(function() pcall(Cos.remoteSell) end)
+end))
+
+Cos.skinList.MouseButton1Click:Connect(safe(function()
+    task.spawn(function() pcall(Cos.getSkinList) end)
 end))
 
 Cos.replay.MouseButton1Click:Connect(safe(function()
