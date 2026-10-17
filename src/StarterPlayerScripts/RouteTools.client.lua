@@ -468,10 +468,10 @@ local autoFishBtn = makeButton(fishScroll, "Auto Fish: OFF", Color3.fromRGB(120,
 local fishStatusLabel = makeLabel(fishScroll, "Status: Idle", Color3.fromRGB(150, 255, 150), 1, 40)
 fishStatusLabel.TextSize = 10
 fishStatusLabel.TextWrapped = true
+local fishCountLabel = makeLabel(fishScroll, "Ikan didapat: 0", Color3.fromRGB(255, 220, 120), 2, 26)
+fishCountLabel.TextSize = 13
+fishCountLabel.Font = Enum.Font.GothamBold
 
--- label debug tetap dibuat (Fish.render / log tetap jalan di belakang layar) tapi TIDAK ditampilkan di UI
-fishDebugLabel = Instance.new("TextLabel")
-fishDebugLabel.Name = "FishDebugHidden"
 
 -- ====== TAB 4: TOOLS ======
 local toolsTab, toolsScroll = makeContentTab()
@@ -511,6 +511,14 @@ SpyUI.log.TextSize = 9
 SpyUI.log.TextWrapped = true
 SpyUI.log.TextXAlignment = Enum.TextXAlignment.Left
 SpyUI.log.TextYAlignment = Enum.TextYAlignment.Top
+
+-- log debug mancing (status, fish count, timeline): ditampilkan di Settings, bukan di tab Fishing
+fishDebugLabel = makeLabel(settingsScroll, "Fishing: -", Color3.fromRGB(150, 255, 150), 30, 460)
+fishDebugLabel.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
+fishDebugLabel.TextSize = 9
+fishDebugLabel.TextWrapped = true
+fishDebugLabel.TextXAlignment = Enum.TextXAlignment.Left
+fishDebugLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 function SpyUI.setText(text)
     if SpyUI.log and SpyUI.log.Parent then
@@ -1528,6 +1536,8 @@ do
 
     -- dipanggil tiap 0.1s dari loop gabungan di akhir script
     function Fish.cleanTick()
+        -- hanya saat cutscene aktif: di luar itu jangan menyentuh kamera/velocity/GUI supaya siklus mancing normal tidak terganggu
+        if not cutsceneActive then return end
         pcall(Fish.forceCameraStable)
         pcall(Fish.resetPlayerVelocity)
         local now = tick()
@@ -2225,6 +2235,10 @@ do
         local on = Fish.setupListener()
         Fish.startWatchers()
         log("Scan selesai | broadcast: " .. (on and "aktif" or "tidak ada (counter manual)"))
+    end
+
+    function Fish.getCount()
+        return fishCaught
     end
 
     function Fish.resetCounter()
@@ -3103,6 +3117,9 @@ task.spawn(function()
     task.wait(3)
     while true do
         task.wait(0.5)
+        pcall(function()
+            fishCountLabel.Text = "Ikan didapat: " .. tostring(Fish.getCount())
+        end)
         pcall(function()
             if USE_AUTO_FISH then
                 fishStatusLabel.Text = "Status: Running"
