@@ -889,7 +889,6 @@ local Fish = {
     autoTrigger = true,     -- true: MiniGame otomatis setelah cast (tanpa spam click)
     postSpam = true,        -- true: setelah MiniGame, cari tombol minigame lalu spam klik
     markerDelay = 0.5,      -- jeda marker terdeteksi -> MiniGame (server perlu waktu 'menerima' marker)
-    triggerDelay = 2.0,     -- detik tunggu tali nyampe air sebelum MiniGame (wajib penuh, ganti deteksi marker)
     spamDuration = 3,       -- lama spam klik minigame (detik)
     spamTarget = "Auto",    -- Auto | Quick | Berhenti | Screen
     skipCutscene = true,    -- skip animasi cutscene ikan langka (animasi + kamera + GUI)
@@ -1699,6 +1698,22 @@ do
         return spamLoop(duration, Fish.spamTarget)
     end
 
+    -- tembak MiniGame (dipakai jalur marker): set miniFired tepat sebelum callRemote + log sumber
+    local function triggerMiniGame(remotes, reason)
+        if miniFired then return false end
+        if not (remotes and remotes.MiniGame and remotes.MiniGame.Parent) then
+            log("MiniGame remote tidak ada -> trigger dilewati")
+            return false
+        end
+        miniFired = true   -- dikunci tepat sebelum callRemote: cegah double MiniGame
+        local msg = "Triggering MiniGame via " .. tostring(reason)
+        tl(msg)
+        log(msg)
+        if Fish.postSpam then preSnapshot = guiSnapshot() end
+        callRemote(remotes.MiniGame, "MiniGame", true)
+        return true
+    end
+
     local function onMarkerDetected(source)
         if markerDetected or not awaitMarker then return end
         if miniFired then return end
@@ -1710,13 +1725,9 @@ do
         if Fish.autoTrigger then
             local remotes = resolve()
             if remotes.MiniGame then
-                miniFired = true   -- dikunci sinkron di sini: watchdog/timeout tidak boleh nembak MiniGame lagi
                 task.spawn(function()
-                    task.wait(Fish.markerDelay)   -- beri server waktu "menerima" marker
-                    if Fish.postSpam then preSnapshot = guiSnapshot() end
-                    callRemote(remotes.MiniGame, "MiniGame", true)
-                    tl("MiniGame fired (delay " .. Fish.markerDelay .. "s)")
-                    log("Auto MiniGame fired (" .. source .. ")")
+                    task.wait(Fish.markerDelay)   -- jeda sinkronisasi (0.5s) SETELAH marker, sebelum MiniGame
+                    triggerMiniGame(remotes, "marker")   -- miniFired + callRemote(MiniGame) di sini
                 end)
             end
         end
@@ -1878,22 +1889,6 @@ do
         end
     end
 
-    -- tembak MiniGame lewat durasi penuh (bukan nunggu TandaSeruOrang) + log sumber trigger
-    local function triggerMiniGame(remotes, reason)
-        if miniFired then return false end
-        if not (remotes and remotes.MiniGame) then
-            log("MiniGame remote tidak ada -> trigger dilewati")
-            return false
-        end
-        miniFired = true
-        local msg = "Triggering MiniGame via " .. tostring(reason)
-        tl(msg)
-        log(msg)
-        if Fish.postSpam then preSnapshot = guiSnapshot() end
-        callRemote(remotes.MiniGame, "MiniGame", true)
-        return true
-    end
-
     local function runInstant()
         local remotes = resolve()
         if not remotes.CastEvent then
@@ -1939,27 +1934,28 @@ do
         fishStatus = "cast2"
         local args = generateCastArgs()
         lastCastArgs = fmtArgs(args)
-        awaitMarker = false   -- tidak lagi menunggu marker; MiniGame ditembak lewat durasi (lihat bawah)
+        awaitMarker = true   -- tunggu marker (TandaSeruOrang/TandaSeruBersama) dulu, baru tembak MiniGame
         callRemote(remotes.CastEvent, "CastEvent", table.unpack(args, 1, args.n))
         tl("Cast(false, " .. (args.n - 1) .. " args) fired" .. ((Fish.useSpyArgs and Fish.capturedCast) and " [spy]" or " [default]"))
         render()
 
         if Fish.autoTrigger then
-            -- 4. TRIGGER BY DELAY: 'TandaSeruOrang' muncul duluan (sebelum tali sampai air) sehingga TIDAK
-            --    dipakai sebagai patokan. WAJIB tunggu durasi penuh sampai tali sampai air -> baru tembak.
+            -- 4. TUNGGU MARKER: MiniGame ditembak SETELAH marker muncul + jeda 0.5s (lihat onMarkerDetected).
             fishStatus = "waiting_marker"
-            awaitMarker = false      -- tidak ada trigger dari jalur marker
-            markerWaitStart = nil    -- watchdog tidak boleh nembak selama siklus ini
+            awaitMarker = true
+            markerWaitStart = tick()
             miniFired = false
             local fishBefore = fishCaught   -- baseline untuk cek hasil
-            tl("Trigger delay: tunggu " .. Fish.triggerDelay .. "s penuh (tali ke air)")
+            tl("Waiting marker (max " .. MARKER_TIMEOUT .. "s)")
             render()
-            task.wait(Fish.triggerDelay)   -- WAJIB penuh: jangan trigger sebelum tali nyampe air
+            waitForMarker(remotes)
 
-            -- 5. tembak MiniGame (log: "Triggering MiniGame via delay")
-            triggerMiniGame(remotes, "delay")
-            task.wait(Fish.markerDelay)   -- beri server waktu bikin UI minigame sebelum spam
+            -- 5. tunggu MiniGame benar-benar terkirim (miniFired di-set 0.5s setelah marker)
+            local tw = tick()
+            while not miniFired and tick() - tw < (Fish.markerDelay + 1) do task.wait(0.02) end
             fishStatus = "reel"
+            markerWaitStart = nil
+            awaitMarker = false
             if Fish.stopAnimOn then stopAllAnimations() end
             render()
             if Fish.postSpam then
@@ -2150,19 +2146,10 @@ do
         return true
     end
 
-    -- watchdog: cadangan kalau waitForMarker tidak jalan (mis. status nyangkut). Ambang = MARKER_TIMEOUT
-    -- supaya tidak nembak MiniGame duluan; onMarkerDetected + miniFired menjaga agar tidak dobel.
+    -- watchdog DINONAKTIFKAN: jalur marker (waitForMarker) yang menangani timeout (max MARKER_TIMEOUT).
+    -- Dulu watchdog bisa nembak MiniGame duluan -> bentrok/dobel dengan jalur marker.
     function Fish.watchdogTick()
-        if Fish.autoTrigger and not inCycle and fishStatus == "waiting_marker" and markerWaitStart
-            and tick() - markerWaitStart > MARKER_TIMEOUT and not miniFired then
-            local remotes = resolve()
-            if remotes.MiniGame then
-                miniFired = true
-                callRemote(remotes.MiniGame, "MiniGame", true)
-                lastMarkerTime = tick()
-                log("Auto-trigger MiniGame (watchdog)")
-            end
-        end
+        return
     end
 
     -- 1 siklus: CastEvent(true) + CastEvent(false, args) + tunggu 0.3s + MiniGame(true), log tiap step
