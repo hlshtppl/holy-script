@@ -94,6 +94,9 @@ local AUTO_PENDING_RETRY = true
 local AUTO_START = false
 local RESET_MODE = "Never"   -- "Always" | "Once" | "Never"
 
+-- ====== SUMMIT (smart target) ======
+local BASE_SUMMIT_PER_CP = 1   -- poin summit per CP (base, sebelum multiplier event)
+
 -- ====== NAMA STAT ======
 local CHECKPOINT_STAT_NAMES = {
     "Checkpoint", "CP", "Stage", "Level", "Progress",
@@ -183,6 +186,7 @@ local cpLabel, loopLabel, pendingLabel, debugLabel
 local cachedServerCP = nil
 local fishDebugLabel
 local SnapshotUI = {}   -- { label=, clearBtn= } (satu tabel supaya hemat slot local)
+local SummitUI = {}     -- { curLabel=, eventLabel=, estLabel=, statusLabel=, box= } (hemat slot local)
 
 -- ====== UI ======
 local gui = Instance.new("ScreenGui")
@@ -391,6 +395,34 @@ local autoStartBtn = makeButton(routeScroll, "Auto-Start: OFF", Color3.fromRGB(1
 local resetModeBtn = makeButton(routeScroll, "Reset: Never",    Color3.fromRGB(120, 120, 120), 5)
 local tpResetBtn   = makeButton(routeScroll, "Teleport Reset",  Color3.fromRGB(200, 130, 30), 6)
 local loopBtn      = makeButton(routeScroll, "Loop: OFF",       Color3.fromRGB(120, 120, 120), 7)
+
+-- ---- Summit (smart target) di tab Route ----
+SummitUI.curLabel = makeLabel(routeScroll, "Current Summit: -", Color3.fromRGB(255, 220, 120), 8, 22)
+SummitUI.eventLabel = makeLabel(routeScroll, "Event: Summit x-", Color3.fromRGB(150, 220, 255), 9, 22)
+SummitUI.estLabel = makeLabel(routeScroll, "Estimasi Next CP: +-", Color3.fromRGB(200, 255, 180), 10, 22)
+
+local summitTargetHdr = makeLabel(routeScroll, "Target Summit (0 = OFF):", Color3.fromRGB(220, 220, 220), 11, 18)
+summitTargetHdr.TextSize = 10
+summitTargetHdr.TextXAlignment = Enum.TextXAlignment.Left
+
+SummitUI.box = Instance.new("TextBox")
+SummitUI.box.LayoutOrder = 12
+SummitUI.box.Size = UDim2.new(1, -8, 0, 26)
+SummitUI.box.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+SummitUI.box.Text = "0"
+SummitUI.box.PlaceholderText = "contoh: 1000"
+SummitUI.box.ClearTextOnFocus = false
+SummitUI.box.TextColor3 = Color3.new(1, 1, 1)
+SummitUI.box.Font = Enum.Font.Code
+SummitUI.box.TextSize = 12
+SummitUI.box.Parent = routeScroll
+Instance.new("UICorner", SummitUI.box)
+
+SummitUI.statusLabel = makeLabel(routeScroll, "", Color3.fromRGB(255, 140, 140), 13, 44)
+SummitUI.statusLabel.TextSize = 10
+SummitUI.statusLabel.TextWrapped = true
+SummitUI.statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+SummitUI.statusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 -- ====== TAB 2: CP ======
 local cpTab, cpScroll = makeContentTab()
@@ -2710,10 +2742,77 @@ end)
 -- (loop autoFish lama dihapus: FireServer EquipToolFromHotbar/FishingCompleted tiap 0.15s bentrok
 --  dengan Fish.instant; sekarang hanya loop Fish.instant di bawah yang jalan)
 
+-- ====== SUMMIT HELPERS ======
+-- multiplier event dari UI game (mis. "Summit x700"); default 1 kalau tidak ketemu
+function SummitUI.getEventMultiplier()
+    local best = nil
+    pcall(function()
+        for _, obj in ipairs(playerGui:GetDescendants()) do
+            if obj:IsA("TextLabel") and obj.Visible
+                and not obj:FindFirstAncestor("RoutePanel")
+                and not obj:FindFirstAncestor("RouteIcon")
+                and not obj:FindFirstAncestor("RouteError") then
+                local t = obj.Text
+                if type(t) == "string" and t ~= "" then
+                    local n = tonumber(string.match(string.lower(t), "summit%s*x%s*(%d+)"))
+                    if n and (best == nil or n > best) then best = n end
+                end
+            end
+        end
+    end)
+    if best == nil or best < 1 then return 1 end
+    return best
+end
+
+-- nilai Summit saat ini: auto-scan leaderstats/Stats/attribute (nama mengandung "summit", lalu "point")
+function SummitUI.getCurrentSummit()
+    local result = nil
+    pcall(function()
+        local function scan(cont)
+            if not cont then return end
+            local fallback = nil
+            for _, stat in ipairs(cont:GetChildren()) do
+                if stat:IsA("ValueBase") then
+                    local n = stat.Name:lower()
+                    if n:find("summit", 1, true) then
+                        local num = tonumber(stat.Value); if num then result = num; return end
+                    elseif n:find("point", 1, true) and fallback == nil then
+                        local num = tonumber(stat.Value); if num then fallback = num end
+                    end
+                end
+            end
+            for k, v in pairs(cont:GetAttributes()) do
+                local n = tostring(k):lower()
+                if n:find("summit", 1, true) then
+                    local num = tonumber(v); if num then result = num; return end
+                elseif n:find("point", 1, true) and fallback == nil then
+                    local num = tonumber(v); if num then fallback = num end
+                end
+            end
+            if result == nil then result = fallback end
+        end
+        scan(player:FindFirstChild("leaderstats"))
+        if result == nil then scan(player:FindFirstChild("Stats")) end
+        if result == nil then scan(player) end
+    end)
+    return result
+end
+
+-- target dari TextBox di tab Route (0 / kosong / non-angka = OFF)
+function SummitUI.getTarget()
+    local n = 0
+    pcall(function()
+        if SummitUI.box then n = tonumber(SummitUI.box.Text) or 0 end
+    end)
+    if n < 0 then n = 0 end
+    return n
+end
+
 -- ====== PLAY CP ======
 local function playCP(startFromPending, startFromIndex)
     stopFlag = false
     loopCount = 0
+    pcall(function() SummitUI.statusLabel.Text = "" end)
 
     print("[RouteTools] === PLAY CP START ===")
     print("[RouteTools] Reset mode: " .. RESET_MODE)
@@ -2785,6 +2884,29 @@ local function playCP(startFromPending, startFromIndex)
 
         for _, idx in ipairs(processList) do
             if stopFlag then break end
+
+            -- SMART STOP: prediksi apakah CP berikutnya bakal melewati target summit
+            local summitTarget = SummitUI.getTarget()
+            if summitTarget > 0 then
+                local cur = SummitUI.getCurrentSummit()
+                local mult = SummitUI.getEventMultiplier()
+                local add = BASE_SUMMIT_PER_CP * mult
+                if cur ~= nil and (cur + add) > summitTarget then
+                    stopFlag = true
+                    USE_LOOP = false
+                    pcall(function()
+                        loopLabel.Text = "Loop: OFF"
+                        loopBtn.Text = "Loop: OFF"
+                        loopBtn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+                    end)
+                    local msg = "STOP! CP berikutnya akan melewati target (Summit saat ini: "
+                        .. tostring(cur) .. ", Tambahan: " .. tostring(add) .. ", Target: " .. tostring(summitTarget) .. ")"
+                    print("[RouteTools] " .. msg)
+                    pcall(function() SummitUI.statusLabel.Text = msg end)
+                    break
+                end
+            end
+
             local cp = CP_LIST[idx]
             currentIndex = idx
             highlightCP(idx)
@@ -2809,6 +2931,24 @@ local function playCP(startFromPending, startFromIndex)
 
     cpPlaying = false
 end
+
+-- ====== SUMMIT UI UPDATE (label tiap 1s; multiplier event dibaca tiap 3s) ======
+task.spawn(function()
+    local mult = 1
+    local i = 0
+    while gui.Parent do
+        if i % 3 == 0 then mult = SummitUI.getEventMultiplier() end
+        i = i + 1
+        local cur = SummitUI.getCurrentSummit()
+        local add = BASE_SUMMIT_PER_CP * mult
+        pcall(function()
+            SummitUI.curLabel.Text = "Current Summit: " .. (cur ~= nil and tostring(cur) or "-")
+        end)
+        pcall(function() SummitUI.eventLabel.Text = "Event: Summit x" .. tostring(mult) end)
+        pcall(function() SummitUI.estLabel.Text = "Estimasi Next CP: +" .. tostring(add) end)
+        task.wait(1)
+    end
+end)
 
 -- ====== MINIMIZE ICON ======
 local guiIcon = Instance.new("ScreenGui")
