@@ -104,7 +104,7 @@ local CHECKPOINT_STAT_NAMES = {
 local CP_LIST = {
     Vector3.new(464,   444,  -8942),
     Vector3.new(449,   489,  -9567),
-    Vector3.new(392,   629,  -10120),
+    Vector3.new(394,   628,  -10113),
     Vector3.new(488,   637,  -10687),
     Vector3.new(1083,  725,  -11160),
     Vector3.new(976,   733,  -11817),
@@ -121,7 +121,7 @@ local CP_LIST = {
     Vector3.new(-4654, 1081, -11662),
     Vector3.new(-5541, 1101, -11649),
     Vector3.new(-6761, 1097, -11506),
-    Vector3.new(-6787, 1102, -10808),
+    Vector3.new(-6787, 1102, -10802),
     Vector3.new(-6766, 1313, -10083),
 }
 
