@@ -182,6 +182,7 @@ local cpButtons = {}
 local cpLabel, loopLabel, pendingLabel, debugLabel
 local cachedServerCP = nil
 local fishDebugLabel
+local SnapshotUI = {}   -- { label=, clearBtn= } (satu tabel supaya hemat slot local)
 
 -- ====== UI ======
 local gui = Instance.new("ScreenGui")
@@ -489,6 +490,16 @@ debugLabel = makeLabel(toolsScroll, "CP Server: --", Color3.fromRGB(150, 255, 15
 debugLabel.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
 debugLabel.TextSize = 10
 debugLabel.TextWrapped = true
+
+-- snapshot cutscene SECRET/FORGOTTEN (diisi oleh Cutscene Snapshot Logger di bawah)
+SnapshotUI.label = makeLabel(toolsScroll, "Cutscene Snapshot (Kosong)", Color3.fromRGB(200, 230, 255), 6, 170)
+SnapshotUI.label.BackgroundColor3 = Color3.fromRGB(20, 30, 45)
+SnapshotUI.label.TextSize = 9
+SnapshotUI.label.TextWrapped = true
+SnapshotUI.label.TextXAlignment = Enum.TextXAlignment.Left
+SnapshotUI.label.TextYAlignment = Enum.TextYAlignment.Top
+
+SnapshotUI.clearBtn = makeButton(toolsScroll, "Clear Snapshot", Color3.fromRGB(120, 60, 60), 7)
 
 -- ====== TAB 5: SETTINGS ======
 local settingsTab, settingsScroll = makeContentTab()
@@ -2220,6 +2231,156 @@ do
     Fish.render = render
     Fish.log = log
     Fish.stopAnims = stopAllAnimations
+    function Fish.snapshotState()
+        return cutsceneActive, fishStatus, miniFired
+    end
+end
+
+-- ====== CUTSCENE SNAPSHOT LOGGER ======
+-- Pantau objek baru di workspace + PlayerGui yang mencurigakan cutscene SECRET/FORGOTTEN,
+-- simpan ringkasannya ke memori (label Tools) supaya tidak perlu menunggu layar.
+-- (dibungkus do...end supaya tidak menambah slot local di main(): batas Luau ~200 local)
+do
+local SnapshotLog = {}
+local SNAPSHOT_BASE = tick()
+local SNAPSHOT_MAX = 10
+local SNAPSHOT_FILE = "RouteTools/snapshot.txt"
+local snapshotSeen = setmetatable({}, { __mode = "k" })   -- weak key: objek tidak ditahan
+
+local SNAPSHOT_CLASSES = {
+    BillboardGui = true, ScreenGui = true, ImageLabel = true, TextLabel = true, Part = true,
+}
+local SNAPSHOT_KEYWORDS = {
+    "tandaseru", "tanda seru", "cutscene", "secret", "forgotten", "mythic", "1 in", "reveal",
+}
+local SNAPSHOT_ALERT = { "1 in 1m", "secret", "forgotten" }
+
+local function snapshotMatch(s)
+    if type(s) ~= "string" or s == "" then return nil end
+    local l = string.lower(s)
+    for _, kw in ipairs(SNAPSHOT_KEYWORDS) do
+        if string.find(l, kw, 1, true) then return kw end
+    end
+    return nil
+end
+
+-- (teks pencocok, teks yang ditampilkan) kalau objek mencurigakan; nil kalau bukan
+local function snapshotCandidate(obj)
+    if not SNAPSHOT_CLASSES[obj.ClassName] then return nil end
+    if snapshotMatch(obj.Name) then return obj.Name, obj.Name end
+    if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+        local text = ""
+        pcall(function() text = obj.Text or "" end)
+        if snapshotMatch(text) then return text, text end
+    end
+    return nil
+end
+
+local function snapshotOwnGui(obj)
+    return obj:FindFirstAncestor("RoutePanel") ~= nil
+        or obj:FindFirstAncestor("RouteIcon") ~= nil
+        or obj:FindFirstAncestor("RouteError") ~= nil
+end
+
+local function renderSnapshotLog()
+    if not (SnapshotUI.label and SnapshotUI.label.Parent) then return end
+    pcall(function()
+        if #SnapshotLog == 0 then
+            SnapshotUI.label.Text = "Cutscene Snapshot (Kosong)"
+            return
+        end
+        local lines = { "Cutscene Snapshot (" .. #SnapshotLog .. "):" }
+        for _, e in ipairs(SnapshotLog) do
+            table.insert(lines, string.format("[%s] %s '%s' (cutsceneActive: %s, status: %s)",
+                e.mmss, e.class, e.disp, tostring(e.cutscene), e.status))
+        end
+        SnapshotUI.label.Text = table.concat(lines, "\n")
+    end)
+end
+
+local function snapshotEntryLine(e)
+    return string.format("[%s] %s '%s' (%s) cutscene=%s status=%s mini=%s",
+        e.mmss, e.class, e.disp, e.path, tostring(e.cutscene), e.status, tostring(e.mini))
+end
+
+local function snapshotSaveFile(line)
+    pcall(function()
+        if isfolder and makefolder and not isfolder("RouteTools") then makefolder("RouteTools") end
+        if appendfile then
+            appendfile(SNAPSHOT_FILE, line .. "\n")
+        elseif writefile then
+            local lines = {}
+            for _, e in ipairs(SnapshotLog) do table.insert(lines, snapshotEntryLine(e)) end
+            writefile(SNAPSHOT_FILE, table.concat(lines, "\n"))
+        end
+    end)
+end
+
+local function pushSnapshot(obj, disp)
+    if snapshotSeen[obj] then return end
+    snapshotSeen[obj] = true
+    local cutActive, fStatus, mFired = false, "?", false
+    if Fish.snapshotState then
+        pcall(function() cutActive, fStatus, mFired = Fish.snapshotState() end)
+    end
+    local path = obj.Name
+    pcall(function() path = obj:GetFullName() end)
+    local elapsed = tick() - SNAPSHOT_BASE
+    local entry = {
+        t = tick(),
+        mmss = string.format("%02d:%02d", math.floor(elapsed / 60), math.floor(elapsed % 60)),
+        name = tostring(obj.Name),
+        class = obj.ClassName,
+        path = path,
+        disp = tostring(disp ~= "" and disp or obj.Name),
+        cutscene = cutActive and true or false,
+        status = tostring(fStatus or "?"),
+        mini = mFired and true or false,
+    }
+    table.insert(SnapshotLog, entry)
+    if #SnapshotLog > SNAPSHOT_MAX then table.remove(SnapshotLog, 1) end
+    renderSnapshotLog()
+    -- auto-save: hanya untuk objek "sekali seumur hidup" (1 in 1M / secret / forgotten)
+    local hay = string.lower(entry.name .. " " .. entry.disp)
+    for _, kw in ipairs(SNAPSHOT_ALERT) do
+        if string.find(hay, kw, 1, true) then
+            warn(string.format("[SNAPSHOT] SECRET DETECTED: %s at %s", entry.name, entry.mmss))
+            snapshotSaveFile(snapshotEntryLine(entry))
+            break
+        end
+    end
+end
+
+local function clearSnapshotLog()
+    SnapshotLog = {}
+    snapshotSeen = setmetatable({}, { __mode = "k" })
+    if SnapshotUI.label and SnapshotUI.label.Parent then
+        pcall(function() SnapshotUI.label.Text = "Cutscene Snapshot (Kosong)" end)
+    end
+end
+
+if SnapshotUI.clearBtn then
+    SnapshotUI.clearBtn.MouseButton1Click:Connect(safe(function()
+        clearSnapshotLog()
+        SnapshotUI.clearBtn.Text = "Cleared!"
+        task.wait(1)
+        SnapshotUI.clearBtn.Text = "Clear Snapshot"
+    end))
+end
+
+-- detector latar: pantau kemunculan objek baru di workspace + PlayerGui
+task.spawn(function()
+    local function onObj(obj)
+        pcall(function()
+            if not obj or not obj.Parent then return end
+            if snapshotOwnGui(obj) then return end
+            local kw, disp = snapshotCandidate(obj)
+            if kw then pushSnapshot(obj, disp) end
+        end)
+    end
+    pcall(function() workspace.DescendantAdded:Connect(onObj) end)
+    pcall(function() playerGui.DescendantAdded:Connect(onObj) end)
+end)
 end
 
 -- ====== REMOTE SPY ======
