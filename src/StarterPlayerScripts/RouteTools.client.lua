@@ -975,7 +975,6 @@ do
     local watchersOn = false
     local cycleT0 = tick()          -- awal siklus (untuk timeline)
     local timeline = {}
-    local preSnapshot = nil         -- snapshot GUI sebelum MiniGame ditembak
     local probeCount = 0
     local baseSnapshot = nil        -- GUI yang sudah ada sebelum siklus (hotbar, HUD) -> bukan kandidat tombol minigame
     local inCycle = false           -- sedang di dalam runInstant
@@ -1257,19 +1256,14 @@ do
 
     local function clickObj(obj)
         if not obj then return end
-        pcall(function()
-            if firesignal and obj:IsA("GuiButton") then
+        -- SATU metode saja per tick (ringan): firesignal. Fallback VirtualUser HANYA kalau executor tanpa firesignal.
+        if firesignal and obj:IsA("GuiButton") then
+            pcall(function()
                 firesignal(obj.MouseButton1Click)
                 firesignal(obj.Activated)
-            end
-        end)
-        pcall(function()
-            if getconnections and obj:IsA("GuiButton") then
-                for _, c in ipairs(getconnections(obj.MouseButton1Click)) do
-                    pcall(function() c:Fire() end)
-                end
-            end
-        end)
+            end)
+            return
+        end
         pcall(function()
             local vu = game:GetService("VirtualUser")
             vu:CaptureController()
@@ -1443,9 +1437,10 @@ do
         pcall(function()
             Fish.beamConn = workspace.DescendantAdded:Connect(function(obj)
                 if not USE_AUTO_FISH then return end
+                -- proses HANYA saat dibutuhkan (hemat CPU; di luar itu langsung keluar)
+                if not (cutsceneActive or fishStatus == "reel") then return end
                 pcall(function()
-                    -- FITUR 2: objek efek cutscene berdasarkan nama -> langsung hancur (saat reel/cutscene saja)
-                    if Fish.isCutsceneObjName(obj.Name) and (cutsceneActive or fishStatus == "reel") then
+                    if Fish.isCutsceneObjName(obj.Name) then
                         Fish.destroyCutsceneObj(obj)
                         return
                     end
@@ -1505,12 +1500,16 @@ do
         end
         if cutsceneActive then
             Fish.stopAnims()   -- stop animasi HANYA saat cutscene aktif (bukan tiap 0.5s)
-            stopAllAnimsEverywhere()
             pcall(Fish.forceCameraStable)   -- FITUR 3: kunci kamera tiap tick (matiin getaran)
             resetCamera()
             hideCutsceneGui(labels)
-            if Fish.aggSkip then Fish.disableCsGuis() end
-            if Fish.destroyBeam then Fish.destroyBeams() end
+            -- scan berat (workspace:GetDescendants) di-throttle ~0.25s, JANGAN tiap tick
+            if now - Fish.lastHeavyT > 0.25 then
+                Fish.lastHeavyT = now
+                stopAllAnimsEverywhere()
+                if Fish.aggSkip then Fish.disableCsGuis() end
+                if Fish.destroyBeam then Fish.destroyBeams() end
+            end
         elseif fishStatus == "success" then
             resetCamera()
         end
@@ -1519,6 +1518,7 @@ do
     -- ====== ANTI SHAKE + BERSIH-BERSIH EFEK SECRET ======
     -- (slot local penuh -> semua di tabel Fish; semua pcall + null check)
     Fish.lastCleanT = 0
+    Fish.lastHeavyT = 0    -- throttle scan berat (workspace) di cutsceneTick
 
     local function isOtherCharacter(obj)
         local m = obj:FindFirstAncestorOfClass("Model")
@@ -1609,7 +1609,7 @@ do
             pcall(Fish.resetPlayerVelocity)
         end
         local now = tick()
-        if now - Fish.lastCleanT > 0.2 then
+        if now - Fish.lastCleanT > 0.35 then   -- scan workspace di-throttle (dulu 0.2s)
             Fish.lastCleanT = now
             pcall(Fish.destroyCutsceneEffects)
             if cutsceneActive then pcall(Fish.destroySecretGui) end
@@ -1777,7 +1777,7 @@ do
                     end
                 end
             end
-            task.wait(0.03)   -- 33 klik/detik
+            task.wait(0.06)   -- ~16 klik/detik (dulu 0.03 = 33/detik, bikin lag)
         end
         tl("Spam done: " .. count .. " clicks | counter " .. c0 .. " -> " .. counterText())
         log("Spam done: " .. count .. " clicks")
@@ -1799,7 +1799,6 @@ do
         local msg = "Triggering MiniGame via " .. tostring(reason)
         tl(msg)
         log(msg)
-        if Fish.postSpam then preSnapshot = guiSnapshot() end
         callRemote(remotes.MiniGame, "MiniGame", true)
         return true
     end
@@ -1991,7 +1990,6 @@ do
         cycleT0 = cycleStart
         timeline = {}
         probeCount = 0
-        preSnapshot = nil
         cycleCredited = false
         baseSnapshot = Fish.postSpam and guiSnapshot() or nil   -- HUD/hotbar yang sudah ada sebelum siklus
         tl("Start cycle")
@@ -2234,12 +2232,6 @@ do
             render()
         end)
         return true
-    end
-
-    -- watchdog DINONAKTIFKAN: jalur marker (waitForMarker) yang menangani timeout (max MARKER_TIMEOUT).
-    -- Dulu watchdog bisa nembak MiniGame duluan -> bentrok/dobel dengan jalur marker.
-    function Fish.watchdogTick()
-        return
     end
 
     -- 1 siklus: CastEvent(true) + CastEvent(false, args) + tunggu 0.3s + MiniGame(true), log tiap step
@@ -3499,7 +3491,7 @@ task.spawn(function()
         end
     end)
     while true do
-        task.wait(Fish.aggSkip and 0.05 or 0.2)
+        task.wait(Fish.aggSkip and 0.15 or 0.3)   -- dulu 0.05s: scan PlayerGui tiap tick bikin lag
         if USE_AUTO_FISH and Fish.skipCutscene then
             pcall(Fish.cutsceneTick)
         end
@@ -3514,15 +3506,6 @@ task.spawn(function()
         if USE_AUTO_FISH and Fish.stopAnimOn then
             pcall(Fish.cleanTick)
         end
-    end
-end)
-
--- watchdog auto-trigger: cek tiap 0.1s, MiniGame ditembak kalau nyangkut di waiting_marker > 1s
-task.spawn(function()
-    task.wait(3)
-    while true do
-        task.wait(0.1)
-        pcall(Fish.watchdogTick)
     end
 end)
 
