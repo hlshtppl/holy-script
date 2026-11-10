@@ -424,24 +424,22 @@ SummitUI.statusLabel.TextWrapped = true
 SummitUI.statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 SummitUI.statusLabel.TextYAlignment = Enum.TextYAlignment.Top
 
-SummitUI.petLabel = makeLabel(routeScroll, "Pet Multiplier: x-", Color3.fromRGB(230, 200, 255), 14, 22)
+local flatHdr = makeLabel(routeScroll, "Flat Pet Bonus (Summit):", Color3.fromRGB(220, 220, 220), 14, 18)
+flatHdr.TextSize = 10
+flatHdr.TextXAlignment = Enum.TextXAlignment.Left
 
-local petHdr = makeLabel(routeScroll, "Pet Multiplier manual (0 = auto):", Color3.fromRGB(220, 220, 220), 15, 18)
-petHdr.TextSize = 10
-petHdr.TextXAlignment = Enum.TextXAlignment.Left
-
-SummitUI.petBox = Instance.new("TextBox")
-SummitUI.petBox.LayoutOrder = 16
-SummitUI.petBox.Size = UDim2.new(1, -8, 0, 26)
-SummitUI.petBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-SummitUI.petBox.Text = "0"
-SummitUI.petBox.PlaceholderText = "contoh: 2"
-SummitUI.petBox.ClearTextOnFocus = false
-SummitUI.petBox.TextColor3 = Color3.new(1, 1, 1)
-SummitUI.petBox.Font = Enum.Font.Code
-SummitUI.petBox.TextSize = 12
-SummitUI.petBox.Parent = routeScroll
-Instance.new("UICorner", SummitUI.petBox)
+SummitUI.flatBox = Instance.new("TextBox")
+SummitUI.flatBox.LayoutOrder = 15
+SummitUI.flatBox.Size = UDim2.new(1, -8, 0, 26)
+SummitUI.flatBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+SummitUI.flatBox.Text = "0"
+SummitUI.flatBox.PlaceholderText = "6000"
+SummitUI.flatBox.ClearTextOnFocus = false
+SummitUI.flatBox.TextColor3 = Color3.new(1, 1, 1)
+SummitUI.flatBox.Font = Enum.Font.Code
+SummitUI.flatBox.TextSize = 12
+SummitUI.flatBox.Parent = routeScroll
+Instance.new("UICorner", SummitUI.flatBox)
 
 -- ====== TAB 2: CP ======
 local cpTab, cpScroll = makeContentTab()
@@ -2783,33 +2781,14 @@ function SummitUI.getEventMultiplier()
     return best
 end
 
--- multiplier pet: TextBox manual (>=1) dipakai duluan; kalau 0 -> auto-scan UI ("Golden Pet x2" / "x3 Buff")
-function SummitUI.getPetMultiplier()
-    local manual = 0
+-- bonus flat summit dari TextBox di tab Route (kosong / non-angka = 0)
+function SummitUI.getFlatBonus()
+    local n = 0
     pcall(function()
-        if SummitUI.petBox then manual = tonumber(SummitUI.petBox.Text) or 0 end
+        if SummitUI.flatBox then n = tonumber(SummitUI.flatBox.Text) or 0 end
     end)
-    if manual >= 1 then return math.floor(manual) end
-    local best = nil
-    pcall(function()
-        for _, obj in ipairs(playerGui:GetDescendants()) do
-            if obj:IsA("TextLabel") and obj.Visible
-                and not obj:FindFirstAncestor("RoutePanel")
-                and not obj:FindFirstAncestor("RouteIcon")
-                and not obj:FindFirstAncestor("RouteError") then
-                local t = obj.Text
-                if type(t) == "string" and t ~= "" then
-                    local tl = string.lower(t)
-                    if tl:find("pet", 1, true) or tl:find("golden", 1, true) or tl:find("buff", 1, true) then
-                        local n = tonumber(string.match(tl, "x%s*(%d+)")) or tonumber(string.match(tl, "%d+"))
-                        if n and n >= 1 and (best == nil or n > best) then best = n end
-                    end
-                end
-            end
-        end
-    end)
-    if best == nil or best < 1 then return 1 end
-    return best
+    if n < 0 then n = 0 end
+    return n
 end
 
 -- nilai Summit saat ini: auto-scan leaderstats/Stats/attribute (nama mengandung "summit", lalu "point")
@@ -2937,8 +2916,9 @@ local function playCP(startFromPending, startFromIndex)
             local summitTarget = SummitUI.getTarget()
             if summitTarget > 0 then
                 local cur = SummitUI.getCurrentSummit()
-                local totalMulti = SummitUI.getEventMultiplier() * SummitUI.getPetMultiplier()
-                local add = BASE_SUMMIT_PER_CP * totalMulti
+                local eventMulti = SummitUI.getEventMultiplier()
+                local flatBonus = SummitUI.getFlatBonus()
+                local add = (BASE_SUMMIT_PER_CP * eventMulti) + flatBonus
                 if cur ~= nil and (cur + add) > summitTarget then
                     stopFlag = true
                     USE_LOOP = false
@@ -2984,24 +2964,22 @@ local function playCP(startFromPending, startFromIndex)
     cpPlaying = false
 end
 
--- ====== SUMMIT UI UPDATE (label tiap 1s; multiplier event/pet dibaca tiap 3s) ======
+-- ====== SUMMIT UI UPDATE (label tiap 1s; event multiplier dibaca tiap 3s) ======
 task.spawn(function()
     local evMult = 1
-    local petMult = 1
     local i = 0
     while gui.Parent do
-        if i % 3 == 0 then
-            evMult = SummitUI.getEventMultiplier()
-            petMult = SummitUI.getPetMultiplier()
-        end
+        if i % 3 == 0 then evMult = SummitUI.getEventMultiplier() end
         i = i + 1
         local cur = SummitUI.getCurrentSummit()
-        local add = BASE_SUMMIT_PER_CP * evMult * petMult
+        local flatBonus = SummitUI.getFlatBonus()
+        local add = (BASE_SUMMIT_PER_CP * evMult) + flatBonus
         pcall(function()
             SummitUI.curLabel.Text = "Current Summit: " .. (cur ~= nil and tostring(cur) or "-")
         end)
-        pcall(function() SummitUI.eventLabel.Text = "Event: Summit x" .. tostring(evMult) end)
-        pcall(function() SummitUI.petLabel.Text = "Pet Multiplier: x" .. tostring(petMult) end)
+        pcall(function()
+            SummitUI.eventLabel.Text = "Event: Summit x" .. tostring(evMult) .. " | Pet Bonus: +" .. tostring(flatBonus)
+        end)
         pcall(function() SummitUI.estLabel.Text = "Estimasi Next CP: +" .. tostring(add) end)
         task.wait(1)
     end
