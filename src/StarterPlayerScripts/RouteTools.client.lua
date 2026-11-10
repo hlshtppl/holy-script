@@ -889,7 +889,7 @@ local Fish = {
     autoTrigger = true,     -- true: MiniGame otomatis setelah cast (tanpa spam click)
     postSpam = true,        -- true: setelah MiniGame, cari tombol minigame lalu spam klik
     markerDelay = 0.5,      -- jeda marker terdeteksi -> MiniGame (server perlu waktu 'menerima' marker)
-    triggerDelay = 1.5,     -- detik tunggu tali nyampe air sebelum MiniGame (ganti deteksi TandaSeruOrang)
+    triggerDelay = 2.0,     -- detik tunggu tali nyampe air sebelum MiniGame (wajib penuh, ganti deteksi marker)
     spamDuration = 3,       -- lama spam klik minigame (detik)
     spamTarget = "Auto",    -- Auto | Quick | Berhenti | Screen
     skipCutscene = true,    -- skip animasi cutscene ikan langka (animasi + kamera + GUI)
@@ -1878,30 +1878,7 @@ do
         end
     end
 
-    -- FITUR 2: tombol minigame ("Quick Click"/"Click") di UI bawah layar (Y > 60%) -> tanda minigame siap
-    local function miniGameButtonReady()
-        local ready = false
-        pcall(function()
-            local _, vpY = viewSize()
-            for _, obj in ipairs(playerGui:GetDescendants()) do
-                if (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("ImageButton"))
-                    and obj.Visible
-                    and not obj:FindFirstAncestor("RoutePanel")
-                    and not obj:FindFirstAncestor("RouteIcon")
-                    and not obj:FindFirstAncestor("RouteError") then
-                    local s = obj:IsA("ImageButton") and "" or (obj.Text or "")
-                    local n = (s .. " " .. obj.Name):lower()
-                    if (n:find("quick") or n:find("click")) and obj.AbsolutePosition.Y >= vpY * 0.6 then
-                        ready = true
-                        return
-                    end
-                end
-            end
-        end)
-        return ready
-    end
-
-    -- FITUR 1/3: tembak MiniGame lewat durasi (bukan nunggu TandaSeruOrang) + log sumber trigger
+    -- tembak MiniGame lewat durasi penuh (bukan nunggu TandaSeruOrang) + log sumber trigger
     local function triggerMiniGame(remotes, reason)
         if miniFired then return false end
         if not (remotes and remotes.MiniGame) then
@@ -1969,24 +1946,18 @@ do
 
         if Fish.autoTrigger then
             -- 4. TRIGGER BY DELAY: 'TandaSeruOrang' muncul duluan (sebelum tali sampai air) sehingga TIDAK
-            --    lagi dipakai sebagai patokan. Tunggu durasi tetap sampai tali sampai air; kalau tombol
-            --    minigame (Quick Click) sudah tampil di UI bawah -> trigger lebih cepat.
+            --    dipakai sebagai patokan. WAJIB tunggu durasi penuh sampai tali sampai air -> baru tembak.
             fishStatus = "waiting_marker"
-            awaitMarker = false
-            markerWaitStart = nil
+            awaitMarker = false      -- tidak ada trigger dari jalur marker
+            markerWaitStart = nil    -- watchdog tidak boleh nembak selama siklus ini
             miniFired = false
             local fishBefore = fishCaught   -- baseline untuk cek hasil
-            local triggerT = tick()
-            local reason = nil
-            tl("Trigger delay: tunggu " .. Fish.triggerDelay .. "s (atau tombol Quick Click)")
+            tl("Trigger delay: tunggu " .. Fish.triggerDelay .. "s penuh (tali ke air)")
             render()
-            while tick() - triggerT < Fish.triggerDelay do
-                task.wait(0.05)
-                if miniGameButtonReady() then reason = "manual_button" break end
-            end
+            task.wait(Fish.triggerDelay)   -- WAJIB penuh: jangan trigger sebelum tali nyampe air
 
-            -- 5. tembak MiniGame (log: "Triggering MiniGame via delay/manual button")
-            triggerMiniGame(remotes, reason or "delay")
+            -- 5. tembak MiniGame (log: "Triggering MiniGame via delay")
+            triggerMiniGame(remotes, "delay")
             task.wait(Fish.markerDelay)   -- beri server waktu bikin UI minigame sebelum spam
             fishStatus = "reel"
             if Fish.stopAnimOn then stopAllAnimations() end
@@ -2182,7 +2153,7 @@ do
     -- watchdog: cadangan kalau waitForMarker tidak jalan (mis. status nyangkut). Ambang = MARKER_TIMEOUT
     -- supaya tidak nembak MiniGame duluan; onMarkerDetected + miniFired menjaga agar tidak dobel.
     function Fish.watchdogTick()
-        if Fish.autoTrigger and fishStatus == "waiting_marker" and markerWaitStart
+        if Fish.autoTrigger and not inCycle and fishStatus == "waiting_marker" and markerWaitStart
             and tick() - markerWaitStart > MARKER_TIMEOUT and not miniFired then
             local remotes = resolve()
             if remotes.MiniGame then
