@@ -1246,6 +1246,28 @@ do
         return false
     end
 
+    -- FITUR 1: nama objek efek cutscene (temuan log Snapshot) yang harus dibasmi
+    function Fish.isCutsceneObjName(n)
+        if type(n) ~= "string" then return false end
+        local l = string.lower(n)
+        return string.find(l, "suratcutscene", 1, true) ~= nil
+            or string.find(l, "cutscene", 1, true) ~= nil
+            or string.find(l, "reveal", 1, true) ~= nil
+            or string.find(l, "cinematic", 1, true) ~= nil
+            or string.find(l, "tandaseruorang", 1, true) ~= nil
+    end
+
+    -- FITUR 2: hancurkan objek efek cutscene (BillboardGui dimatikan dulu, lalu Destroy; Part/MeshPart ikut)
+    function Fish.destroyCutsceneObj(obj)
+        pcall(function()
+            if not (obj and obj.Parent) then return end
+            if obj:IsA("BillboardGui") then
+                pcall(function() obj.Enabled = false end)
+            end
+            obj:Destroy()
+        end)
+    end
+
     -- tampil, tidak menghitung frame yang kita sembunyikan sendiri
     local function shownIgnoringHidden(obj)
         local cur = obj
@@ -1366,14 +1388,22 @@ do
         end)
     end
 
-    -- objek baru yang muncul saat cutscene aktif langsung dihancurkan (tanpa nunggu tick)
+    -- objek baru yang muncul saat cutscene/reel langsung dihancurkan (tanpa nunggu tick)
     function Fish.setupBeamHook()
         if Fish.beamConn then return end
         pcall(function()
             Fish.beamConn = workspace.DescendantAdded:Connect(function(obj)
-                if cutsceneActive and Fish.destroyBeam and USE_AUTO_FISH then
-                    Fish.destroyBeamObj(obj)
-                end
+                if not USE_AUTO_FISH then return end
+                pcall(function()
+                    -- FITUR 2: objek efek cutscene berdasarkan nama -> langsung hancur (saat reel/cutscene saja)
+                    if Fish.isCutsceneObjName(obj.Name) and (cutsceneActive or fishStatus == "reel") then
+                        Fish.destroyCutsceneObj(obj)
+                        return
+                    end
+                    if cutsceneActive and Fish.destroyBeam then
+                        Fish.destroyBeamObj(obj)
+                    end
+                end)
             end)
         end)
     end
@@ -1427,6 +1457,7 @@ do
         if cutsceneActive then
             Fish.stopAnims()   -- stop animasi HANYA saat cutscene aktif (bukan tiap 0.5s)
             stopAllAnimsEverywhere()
+            pcall(Fish.forceCameraStable)   -- FITUR 3: kunci kamera tiap tick (matiin getaran)
             resetCamera()
             hideCutsceneGui(labels)
             if Fish.aggSkip then Fish.disableCsGuis() end
@@ -1464,7 +1495,7 @@ do
         end)
         if cutsceneActive then
             pcall(function()
-                cam.CFrame = CFrame.lookAt(root.Position + Vector3.new(0, 5, 15), root.Position)
+                cam.CFrame = root.CFrame * CFrame.new(0, 5, 15)   -- FITUR 3: kunci kamera (matiin getaran)
             end)
         end
     end
@@ -1479,19 +1510,27 @@ do
         end)
     end
 
-    -- hanya saat cutscene aktif; ParticleEmitter/Beam/Attachment ber-nama efek, bukan karakter siapa pun
+    -- hanya saat cutscene aktif ATAU reel (jangan saat idle/waiting_marker); null check + pcall
     function Fish.destroyCutsceneEffects()
-        if not cutsceneActive then return end
+        if not (cutsceneActive or fishStatus == "reel") then return end
         local char = player.Character
         for _, obj in ipairs(workspace:GetDescendants()) do
             pcall(function()
                 if not obj.Parent then return end
-                if not (obj:IsA("ParticleEmitter") or obj:IsA("Beam") or obj:IsA("Attachment")) then return end
-                if char and obj:IsDescendantOf(char) then return end
+                local mine = char and obj:IsDescendantOf(char)
+                -- FITUR 1/2: objek efek cutscene berdasarkan nama (SuratCutscene/Cutscene/Reveal/Cinematic/TandaSeruOrang)
+                if Fish.isCutsceneObjName(obj.Name) then
+                    if not mine and isOtherCharacter(obj) then return end   -- jangan sentuh karakter pemain lain
+                    Fish.destroyCutsceneObj(obj)
+                    return
+                end
+                -- efek ParticleEmitter/Beam/Attachment (bukan karakter siapa pun)
+                if mine then return end
                 if isOtherCharacter(obj) then return end
+                if not (obj:IsA("ParticleEmitter") or obj:IsA("Beam") or obj:IsA("Attachment")) then return end
                 local n = obj.Name:lower()
                 if n:find("beam") or n:find("particle") or n:find("flash") or n:find("shake")
-                    or n:find("burst") or n:find("cutscene") or n:find("secret") or n:find("effect") then
+                    or n:find("burst") or n:find("secret") or n:find("effect") then
                     obj:Destroy()
                 end
             end)
@@ -1514,15 +1553,17 @@ do
 
     -- dipanggil tiap 0.1s dari loop gabungan di akhir script
     function Fish.cleanTick()
-        -- hanya saat cutscene aktif: di luar itu jangan menyentuh kamera/velocity/GUI supaya siklus mancing normal tidak terganggu
-        if not cutsceneActive then return end
-        pcall(Fish.forceCameraStable)
-        pcall(Fish.resetPlayerVelocity)
+        -- kamera/velocity hanya saat cutscene aktif; pembersihan objek juga saat reel (jangan saat idle/waiting_marker)
+        if not (cutsceneActive or fishStatus == "reel") then return end
+        if cutsceneActive then
+            pcall(Fish.forceCameraStable)
+            pcall(Fish.resetPlayerVelocity)
+        end
         local now = tick()
         if now - Fish.lastCleanT > 0.2 then
             Fish.lastCleanT = now
             pcall(Fish.destroyCutsceneEffects)
-            pcall(Fish.destroySecretGui)
+            if cutsceneActive then pcall(Fish.destroySecretGui) end
         end
     end
 
