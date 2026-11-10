@@ -172,7 +172,7 @@ end
 
 CPStore.load()
 
-local RESET_POS = Vector3.new(-6828, 1314, -9902)
+local RESET_POS = Vector3.new(-6823, 1310, -9847)
 
 -- ====== STATE ======
 local cpPlaying = false
