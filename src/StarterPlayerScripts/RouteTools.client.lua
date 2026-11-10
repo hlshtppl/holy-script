@@ -831,40 +831,6 @@ local function antiAFK()
     end
 end
 
--- ====== AUTO FISH FUNCTION ======
-local function getNet()
-    local pkgs = ReplicatedStorage:FindFirstChild("Packages")
-    if not pkgs then return nil end
-    local index = pkgs:FindFirstChild("_Index")
-    if not index then return nil end
-    for _, child in ipairs(index:GetChildren()) do
-        if string.find(child.Name:lower(), "sleitnick") then
-            local net = child:FindFirstChild("net")
-            if net then return net end
-        end
-    end
-    return nil
-end
-
-local function autoFish()
-    local net = getNet()
-    if not net then
-        warn("[RouteTools] AutoFish: net tidak ditemukan")
-        return
-    end
-    local equip = net:FindFirstChild("RE/EquipToolFromHotbar")
-    local complete = net:FindFirstChild("RE/FishingCompleted")
-    if not equip or not complete then
-        warn("[RouteTools] AutoFish: remote tidak ditemukan")
-        return
-    end
-    pcall(function()
-        equip:FireServer()
-        task.wait(0.1)
-        complete:FireServer()
-    end)
-end
-
 -- ====== SELL ALL FISH + SCAN REMOTES ======
 local function setFishText(text)
     if fishDebugLabel and fishDebugLabel.Parent then
@@ -1448,6 +1414,7 @@ do
             render()
         end
         if cutsceneActive then
+            Fish.stopAnims()   -- stop animasi HANYA saat cutscene aktif (bukan tiap 0.5s)
             stopAllAnimsEverywhere()
             resetCamera()
             hideCutsceneGui(labels)
@@ -1722,6 +1689,7 @@ do
 
     local function onMarkerDetected(source)
         if markerDetected or not awaitMarker then return end
+        if miniFired then return end
         markerDetected = true
         markerSource = source
         lastMarkerTime = tick()
@@ -1730,10 +1698,10 @@ do
         if Fish.autoTrigger then
             local remotes = resolve()
             if remotes.MiniGame then
+                miniFired = true   -- dikunci sinkron di sini: watchdog/timeout tidak boleh nembak MiniGame lagi
                 task.spawn(function()
                     task.wait(Fish.markerDelay)   -- beri server waktu "menerima" marker
                     if Fish.postSpam then preSnapshot = guiSnapshot() end
-                    miniFired = true
                     callRemote(remotes.MiniGame, "MiniGame", true)
                     tl("MiniGame fired (delay " .. Fish.markerDelay .. "s)")
                     log("Auto MiniGame fired (" .. source .. ")")
@@ -1958,9 +1926,9 @@ do
             render()
             waitForMarker(remotes)
 
-            -- 5. MiniGame ditembak onMarkerDetected (setelah markerDelay); tunggu sampai benar-benar terkirim
-            local tw = tick()
-            while not miniFired and tick() - tw < (Fish.markerDelay + 1) do task.wait(0.02) end
+            -- 5. MiniGame ditembak onMarkerDetected setelah markerDelay (miniFired sudah dikunci saat deteksi);
+            --    beri jeda markerDelay agar remote benar-benar sempat terkirim sebelum spam mulai
+            task.wait(Fish.markerDelay)
             fishStatus = "reel"
             markerWaitStart = nil
             awaitMarker = false
@@ -2154,10 +2122,11 @@ do
         return true
     end
 
-    -- watchdog: kalau status nyangkut di waiting_marker > 4 detik (di atas timeout marker 3s), tembak MiniGame (tidak dobel dengan runInstant)
+    -- watchdog: cadangan kalau waitForMarker tidak jalan (mis. status nyangkut). Ambang = MARKER_TIMEOUT
+    -- supaya tidak nembak MiniGame duluan; onMarkerDetected + miniFired menjaga agar tidak dobel.
     function Fish.watchdogTick()
         if Fish.autoTrigger and fishStatus == "waiting_marker" and markerWaitStart
-            and tick() - markerWaitStart > 4 and not miniFired then
+            and tick() - markerWaitStart > MARKER_TIMEOUT and not miniFired then
             local remotes = resolve()
             if remotes.MiniGame then
                 miniFired = true
@@ -2532,12 +2501,8 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function()
-    while true do
-        task.wait(FISH_DELAY)
-        if USE_AUTO_FISH then autoFish() end
-    end
-end)
+-- (loop autoFish lama dihapus: FireServer EquipToolFromHotbar/FishingCompleted tiap 0.15s bentrok
+--  dengan Fish.instant; sekarang hanya loop Fish.instant di bawah yang jalan)
 
 -- ====== PLAY CP ======
 local function playCP(startFromPending, startFromIndex)
@@ -3129,7 +3094,6 @@ task.spawn(function()
                 fishStatusLabel.Text = "Status: Idle"
             end
         end)
-        if USE_AUTO_FISH and Fish.stopAnimOn then pcall(Fish.stopAnims) end
         if USE_AUTO_FISH and Fish.live then pcall(Fish.render) end
     end
 end)
